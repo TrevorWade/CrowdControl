@@ -362,7 +362,7 @@ function createOverlayWindow() {
   overlayWindow = new BrowserWindow({
     width: 800,
     height: 600,
-    frame: true,
+    frame: false,
     transparent: true,
     show: false,
     backgroundColor: '#00000000',

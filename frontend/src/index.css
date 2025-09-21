@@ -12,6 +12,13 @@
   }
 }
 
+/* Transparent body when running in overlay route (frameless window) */
+@layer base {
+  body.overlay-mode {
+    background: transparent !important;
+  }
+}
+
 /* Live feed card animation */
 .slide-in-left {
   animation: slide-in-left 150ms ease-out both;
@@ -74,6 +81,15 @@
   
   .focus-ring {
     @apply focus:outline-none focus:ring-2 focus:ring-tiktok-cyan focus:ring-opacity-50;
+  }
+
+  /* Electron draggable window regions */
+  .app-drag {
+    -webkit-app-region: drag;
+    cursor: move;
+  }
+  .app-no-drag {
+    -webkit-app-region: no-drag;
   }
 }
 

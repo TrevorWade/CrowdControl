@@ -23,6 +23,7 @@ export default function StreamOverlay({ mapping, likeTriggers, onCloseOverride, 
   // Accept live updates from host window via BroadcastChannel
   const [liveMapping, setLiveMapping] = useState(mapping || {});
   const [liveTriggers, setLiveTriggers] = useState(Array.isArray(likeTriggers) ? likeTriggers : []);
+  const [liveTotalLikes, setLiveTotalLikes] = useState(0);
   useEffect(() => setLiveMapping(mapping || {}), [mapping]);
   useEffect(() => setLiveTriggers(Array.isArray(likeTriggers) ? likeTriggers : []), [likeTriggers]);
   useEffect(() => {
@@ -34,6 +35,7 @@ export default function StreamOverlay({ mapping, likeTriggers, onCloseOverride, 
         const m = ev.data || {};
         if (m.type === 'mapping' && m.mapping) setLiveMapping(m.mapping);
         if (m.type === 'likeTriggers' && Array.isArray(m.likeTriggers)) setLiveTriggers(m.likeTriggers);
+        if (m.type === 'totalLikes' && typeof m.totalLikes === 'number') setLiveTotalLikes(m.totalLikes);
         if (m.type === 'photoMapUpdated') {
           const name = String(m.profile || m.gameName || '').trim();
           // Reload photo-map.json so photoForKey() reflects latest images
@@ -77,6 +79,14 @@ export default function StreamOverlay({ mapping, likeTriggers, onCloseOverride, 
       durationSec: (Number(t.durationMs) || 0) / 1000,
     })).sort((a, b) => a.threshold - b.threshold);
   }, [liveTriggers]);
+
+  function computeProgress(threshold) {
+    if (!threshold) return { percent: 0, likesUntilNext: 0 };
+    const current = liveTotalLikes % threshold;
+    const percent = Math.min(100, Math.max(0, (current / threshold) * 100));
+    const likesUntilNext = threshold - current || threshold;
+    return { percent, likesUntilNext };
+  }
 
   function toImageSrc(p) {
     if (!p) return null;
@@ -162,7 +172,7 @@ export default function StreamOverlay({ mapping, likeTriggers, onCloseOverride, 
       <div className="absolute inset-0 flex items-start justify-center p-4 sm:p-8">
         <div className="w-full max-w-3xl bg-gray-900/95 text-white rounded-xl border border-gray-700 shadow-2xl overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700 app-drag select-none">
             <div className="flex items-center gap-2">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v12a1 1 0 01-1 1H9l-4 4v-4H4a1 1 0 01-1-1V4z" />
@@ -170,7 +180,7 @@ export default function StreamOverlay({ mapping, likeTriggers, onCloseOverride, 
               <h2 className="text-lg font-semibold">Stream Overlay</h2>
             </div>
             <button
-              className="px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 border border-gray-600"
+              className="px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 border border-gray-600 app-no-drag"
               onClick={closeOverlay}
               title="Close"
             >
@@ -207,16 +217,30 @@ export default function StreamOverlay({ mapping, likeTriggers, onCloseOverride, 
                 {triggerRows.length === 0 && (
                   <div className="text-gray-500 text-sm">No like triggers yet</div>
                 )}
-                {triggerRows.map(({ threshold, key, durationSec }) => (
-                  <div key={`trigger-${threshold}-${key}`} className="flex items-center bg-gray-800/60 rounded-lg px-3 py-2 border border-gray-700">
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-300">{threshold} Likes</span>
-                      <span className="text-gray-400">=</span>
-                      {renderKeyCell(key)}
-                      <span className="text-gray-300">{Math.max(0.1, Number(durationSec) || 0)}s</span>
+                {triggerRows.map(({ threshold, key, durationSec }) => {
+                  const { percent, likesUntilNext } = computeProgress(threshold);
+                  return (
+                    <div key={`trigger-${threshold}-${key}`} className="bg-gray-800/60 rounded-lg px-3 py-2 border border-gray-700">
+                      <div className="flex items-center gap-2">
+                        <span className="text-tiktok-red text-lg leading-none" aria-label={`${threshold} likes`}>❤️</span>
+                        <span className="text-tiktok-red font-semibold">{threshold.toLocaleString()}</span>
+                        <span className="text-gray-400">=</span>
+                        {renderKeyCell(key)}
+                        <span className="text-gray-300">{Math.max(0.1, Number(durationSec) || 0)}s</span>
+                        <span className="ml-auto text-xs text-gray-400">{likesUntilNext} more</span>
+                      </div>
+                      <div className="mt-2">
+                        <div className="flex items-center justify-between text-[10px] text-gray-500 mb-1">
+                          <span>Progress to next trigger</span>
+                          <span>{Math.round(percent)}%</span>
+                        </div>
+                        <div className="w-full bg-gray-700 rounded-full h-1.5">
+                          <div className="bg-tiktok-cyan h-1.5 rounded-full transition-all duration-300" style={{ width: `${percent}%` }}></div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>

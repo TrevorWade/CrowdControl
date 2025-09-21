@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import PhotoMappingSettings from './PhotoMappingSettings.jsx';
 
 /**
@@ -61,8 +62,18 @@ export default function Settings({
     }
   ];
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8">
+  // Render the modal at the document body level so it's not constrained by parent stacking contexts
+  return createPortal(
+    // Overlay wrapper captures clicks outside the modal to close settings
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8"
+      onClick={(e) => {
+        // Close only when the click is on the overlay itself (outside modal)
+        if (e.target === e.currentTarget) {
+          onClose?.();
+        }
+      }}
+    >
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
@@ -189,6 +200,7 @@ export default function Settings({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
