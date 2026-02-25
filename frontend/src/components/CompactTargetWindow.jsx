@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { send } from '../ws';
+import WindowSelector from './WindowSelector.jsx';
 
 /**
  * CompactTargetWindow: header control to set the target window keyword at runtime
@@ -72,6 +73,18 @@ export default function CompactTargetWindow({ initialKeyword = '' }) {
 
           <div className="text-xs text-gray-400 mb-2">
             Enter part of the game window title or process name. We'll focus it before sending keys.
+          </div>
+
+          {/* Windows-only helper: dropdown of open windows (like OBS) */}
+          <div className="mb-3">
+            <WindowSelector
+              onSelect={(w) => {
+                // If user selects a window, pre-fill keyword with appName or title for compatibility
+                if (w && (w.appName || w.title)) {
+                  setKeyword(w.appName || w.title || '');
+                }
+              }}
+            />
           </div>
 
           <div className="flex gap-2 flex-wrap">

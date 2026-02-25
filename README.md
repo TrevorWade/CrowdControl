@@ -1,70 +1,111 @@
-TikTok Gift → Key Mapper (TTL RL)
-================================
+<h1 align="center">TikTok Gift → Key Mapper (TTL RL)</h1>
 
-Windows desktop app that maps TikTok Live events to keyboard inputs. Use it to automate in‑game actions (e.g., Rocket League) when gifts arrive or like milestones are reached.
+<p align="center">
+  <strong>Automate your gameplay with TikTok Live gifts and interactions.</strong><br />
+  A professional Windows bridge between TikTok Live and your favorite desktop applications.
+</p>
 
-Features
---------
-- Gift → Key mappings with duration and cooldown
-- Like Triggers: fire keys every N likes
-- Live feed with aggregation for rapid gifts
-- Profiles: save/load mappings and like triggers together
-- Electron desktop build with auto‑update scaffolding
+<p align="center">
+  <img src="https://img.shields.io/badge/OS-Windows%2010%2F11-blue?style=for-the-badge&logo=windows" alt="OS Windows" />
+  <img src="https://img.shields.io/badge/Node.js-18%2B-green?style=for-the-badge&logo=node.js" alt="Node version" />
+  <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License MIT" />
+</p>
 
-Quick Start (Development)
--------------------------
-Prereqs: Node 18+ on Windows 10/11.
+---
 
-1) Clone and install
+## 🚀 Overview
+
+**TTLxRL** is a powerful desktop automation tool designed for streamers. It monitors your TikTok Live stream for specific gifts or like milestones and instantly translates them into keyboard or mouse inputs. Originally optimized for **Rocket League**, it works with any Windows application that accepts standard inputs.
+
+
+## ✨ Key Features
+
+- 🎁 **Gift Mapping**: Map any TikTok gift to specific key presses with custom duration and cooldowns.
+- ❤️ **Like Triggers**: trigger keyboard actions automatically every *N* likes.
+- 📉 **Real-time Aggregation**: Intelligently handles rapid gift sequences to prevent input flooding.
+- 📁 **Profile Management**: Save and switch between different mapping sets for different games easily.
+- 🖥️ **Live Feed**: Monitor all incoming interactions and automation statuses through a sleek dashboard.
+- ⚡ **AutoHotkey Integration**: Leverages AHK v2 for reliable, low-latency input simulation.
+
+## 🛠️ Requirements
+
+Before starting, ensure you have the following installed:
+- **Windows 10 or 11**
+- **Node.js (Version 18 or newer)**
+- **AutoHotkey v2** (Download from [autohotkey.com](https://www.autohotkey.com/))
+
+## 🏁 1-Minute Quick Start
+
+Open an **Elevated PowerShell** (Right-click Start → Terminal Admin or PowerShell Admin) and run:
+
+```powershell
+New-Item -Path C:\apps -ItemType Directory -Force ;
+Set-Location C:\apps ;
+Invoke-WebRequest -Uri https://github.com/TrevorWade/TTLxRL/archive/refs/heads/main.zip -OutFile TTLxRL.zip ;
+Expand-Archive -Path TTLxRL.zip -DestinationPath . -Force ;
+Rename-Item -Path .\TTLxRL-main -NewName TTLxRL ;
+Remove-Item .\TTLxRL.zip ;
+Set-Location .\TTLxRL ;
+.\run_first.bat ;
+.\start_ttlrl.bat
 ```
-cd C:\apps\ttl_rl
-npm install --prefix frontend ; npm install --prefix backend ; npm install --prefix frontend/electron
+
+## 📖 How to Use
+
+1. **Targeting**: Set your **Target Window** keyword (e.g., `rocket league`). The app will only send keys when this window is active.
+2. **Connect**: Enter your TikTok username and click **Connect**.
+3. **Configure**:
+   - Go to **Gift Mappings** to add your first trigger.
+   - Use **Like Triggers** to set up milestone-based actions.
+4. **Play**: Focus your game and let your community drive the action!
+
+## 🔧 Troubleshooting
+
+If things aren't working as expected, check these common fixes:
+
+<details>
+<summary>Inputs are not being sent to the game</summary>
+Ensure the app is running as <b>Administrator</b> and that the game window is currently focused. High-integrity processes (like many games) require the sender to also have elevated permissions.
+</details>
+
+<details>
+<summary>AutoHotkey was not found</summary>
+If the app can't find AHK, edit `backend\.env` and manually set `AHK_PATH`.  
+Example: `AHK_PATH=C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe`
+</details>
+
+<details>
+<summary>UI is blank or stuck loading</summary>
+Close the application completely and run `run_first.bat` to refresh dependencies, then relaunch with `start_ttlrl.bat`.
+</details>
+
+## 👨‍💻 Development & Build
+
+For developers looking to contribute or customize the app:
+
+```bash
+# Terminal 1: Backend
+cd backend
+npm install
+npm run dev
+
+# Terminal 2: Frontend
+cd frontend
+npm install
+npm run dev
 ```
 
-2) Start backend (WebSocket + keyboard sender)
-```
-cd backend ; npm run dev
-```
-
-3) Start frontend (Vite dev server)
-```
-cd ../frontend ; npm run dev
+### Production Build (Electron)
+To create a standalone Windows installer:
+```bash
+cd frontend/electron
+npm run build
 ```
 
-4) Optional: run Electron shell (loads built frontend)
-```
-cd electron ; npm run start
-```
+## ⚖️ License
 
-Production Build
-----------------
-Build frontend and Electron installer:
-```
-cd frontend/electron ; npm run build
-```
-Artifacts appear under `frontend/dist` and `frontend/dist-electron`.
+Distributed under the MIT License. See `LICENSE` for more information.
 
-Using the App
--------------
-- Connect to TikTok Live in the header.
-- Add Gift Mappings: pick a gift from the live feed and map to a key.
-- Add Like Triggers: use Quick Setup pills or custom values; no scrolling needed.
-- Profiles: open Profiles in the top bar to Save/Load/Delete. Profiles store both mappings and like triggers.
-
-Tips
-----
-- Keep the game window focused; use the focus warning to diagnose missed keys.
-- Duration 1.0s is typical; adjust for your game’s input timing.
-- Cooldowns prevent spam when many gifts arrive quickly.
-
-Troubleshooting
----------------
-- If keys do not send: run backend as admin and ensure the game has focus.
-- If the UI does not load: stop all servers and rerun steps 2–3.
-- For unexpected errors, search the web for the exact error message to get the latest fixes.
-
-License
--------
-MIT
-
+---
+<p align="center">Built with ❤️ for the streaming community.</p>
 

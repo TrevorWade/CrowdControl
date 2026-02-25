@@ -52,7 +52,7 @@ function broadcast(payload) {
   const message = JSON.stringify(payload);
   const clientCount = wss.clients.size;
   console.log(`📡 Broadcasting to ${clientCount} clients:`, payload.type);
-  
+
   wss.clients.forEach((client) => {
     if (client.readyState === 1) {
       client.send(message);
@@ -85,7 +85,7 @@ async function checkTargetWindowFocused() {
 // Handle messages from frontend (mapping updates, pause toggle, test events)
 wss.on('connection', (ws) => {
   console.log('🔌 New WebSocket client connected');
-  
+
   // Send current state to new client
   ws.send(JSON.stringify({
     type: 'init',
@@ -105,7 +105,7 @@ wss.on('connection', (ws) => {
     try {
       const msg = JSON.parse(raw.toString());
       console.log(`📨 Received WebSocket message: ${msg.type}`);
-      
+
       if (msg.type === 'update-mapping') {
         // Entire mapping replaces current one
         giftToAction = msg.mapping || {};
@@ -137,18 +137,18 @@ wss.on('connection', (ws) => {
         // Test a like trigger by simulating like events to reach the threshold
         const triggerKey = msg.triggerKey?.trim();
         const targetLikes = parseInt(msg.targetLikes);
-        
+
         if (triggerKey && targetLikes > 0) {
           console.log(`🧪 Testing like trigger: every ${targetLikes} likes → "${triggerKey}"`);
-          
+
           // Don't modify the actual totalLikes - just test the trigger
           // Calculate how many likes needed to trigger
           const currentLikes = totalLikes;
           const likesNeeded = targetLikes - (currentLikes % targetLikes);
           const testLikes = likesNeeded === 0 ? targetLikes : likesNeeded;
-          
+
           console.log(`🧪 Simulated +${testLikes} likes (${currentLikes} → ${currentLikes + testLikes}) - TEST ONLY`);
-          
+
           // Execute the key action if not paused (without updating totalLikes)
           if (!isPaused) {
             console.log(`⏰ Waiting 3000ms before executing like trigger test...`);
@@ -156,7 +156,7 @@ wss.on('connection', (ws) => {
               // Use the same key injection logic as gifts
               const key = String(triggerKey).toLowerCase();
               const durationMs = 1000; // 1 second duration for test
-              
+
               // Focus guard
               const focus = await checkTargetWindowFocused();
               if (!focus.ok) {
@@ -165,7 +165,7 @@ wss.on('connection', (ws) => {
               }
 
               console.log(`Like trigger test: Press key "${key}" for ${durationMs}ms (mode=${currentInjectionMode})`);
-              
+
               if (currentInjectionMode === 'autohotkey') {
                 const ahkPath = process.env.AHK_PATH || 'AutoHotkey.exe';
                 const ahkKey = mapKeyToAhk(key);
@@ -177,12 +177,12 @@ wss.on('connection', (ws) => {
                 const tmpV2 = path.join(os.tmpdir(), `ttlrl_like_test_${Date.now()}_${Math.random().toString(36).slice(2)}_v2.ahk`);
                 fs.writeFileSync(tmpV2, v2script, 'utf8');
                 const v2ok = await runAhk(ahkPath, tmpV2);
-                try { fs.unlinkSync(tmpV2); } catch {}
+                try { fs.unlinkSync(tmpV2); } catch { }
                 if (!v2ok) {
                   const tmpV1 = path.join(os.tmpdir(), `ttlrl_like_test_${Date.now()}_${Math.random().toString(36).slice(2)}_v1.ahk`);
                   fs.writeFileSync(tmpV1, v1script, 'utf8');
                   await runAhk(ahkPath, tmpV1);
-                  try { fs.unlinkSync(tmpV1); } catch {}
+                  try { fs.unlinkSync(tmpV1); } catch { }
                 }
               } else {
                 // Default to nodesender
@@ -229,7 +229,7 @@ wss.on('connection', (ws) => {
         // Handle like-triggered key press using same mechanism as gift mappings
         const key = String(msg.key || '').toLowerCase();
         const durationMs = Math.max(0, Number(msg.durationMs || 300));
-        
+
         if (isPaused) {
           console.log('Paused; ignoring like key trigger');
           return;
@@ -244,7 +244,7 @@ wss.on('connection', (ws) => {
 
         try {
           console.log(`Like trigger: Press key "${key}" for ${durationMs}ms (mode=${currentInjectionMode})`);
-          
+
           // Use exact same key injection logic as gifts
           if (currentInjectionMode === 'autohotkey') {
             const ahkPath = process.env.AHK_PATH || 'AutoHotkey.exe';
@@ -257,12 +257,12 @@ wss.on('connection', (ws) => {
             const tmpV2 = path.join(os.tmpdir(), `ttlrl_like_${Date.now()}_${Math.random().toString(36).slice(2)}_v2.ahk`);
             fs.writeFileSync(tmpV2, v2script, 'utf8');
             const v2ok = await runAhk(ahkPath, tmpV2);
-            try { fs.unlinkSync(tmpV2); } catch {}
+            try { fs.unlinkSync(tmpV2); } catch { }
             if (!v2ok) {
               const tmpV1 = path.join(os.tmpdir(), `ttlrl_like_${Date.now()}_${Math.random().toString(36).slice(2)}_v1.ahk`);
               fs.writeFileSync(tmpV1, v1script, 'utf8');
               await runAhk(ahkPath, tmpV1);
-              try { fs.unlinkSync(tmpV1); } catch {}
+              try { fs.unlinkSync(tmpV1); } catch { }
             }
           } else {
             // Default to nodesender
@@ -281,21 +281,21 @@ wss.on('connection', (ws) => {
         const targetUsername = String(msg.username || '').trim();
         if (!targetUsername) {
           console.log('❌ TikTok connection request missing username');
-          ws.send(JSON.stringify({ 
-            type: 'connection-error', 
-            error: 'Username is required' 
+          ws.send(JSON.stringify({
+            type: 'connection-error',
+            error: 'Username is required'
           }));
           return;
         }
-        
+
         console.log(`📨 Received TikTok connection request for @${targetUsername}`);
         const success = await connectToTikTok(targetUsername);
-        
+
         if (success) {
           console.log(`✅ TikTok connection successful for @${targetUsername}`);
-          ws.send(JSON.stringify({ 
-            type: 'connection-success', 
-            username: targetUsername 
+          ws.send(JSON.stringify({
+            type: 'connection-success',
+            username: targetUsername
           }));
         } else {
           console.log(`❌ TikTok connection failed for @${targetUsername}`);
@@ -323,29 +323,29 @@ wss.on('connection', (ws) => {
         // Reset total likes and all trigger counts
         console.log('🔄 Resetting like counts and trigger counts');
         totalLikes = 0;
-        
+
         // Broadcast the reset to all clients
-        broadcast({ 
-          type: 'like', 
-          likeCount: 0, 
-          totalLikes: 0 
+        broadcast({
+          type: 'like',
+          likeCount: 0,
+          totalLikes: 0
         });
-        
+
         // Send success response
-        ws.send(JSON.stringify({ 
-          type: 'reset-success', 
-          message: 'Like counts reset successfully' 
+        ws.send(JSON.stringify({
+          type: 'reset-success',
+          message: 'Like counts reset successfully'
         }));
       }
     } catch (e) {
       console.error('Invalid WS message', e);
     }
   });
-  
+
   ws.on('close', () => {
     console.log('🔌 WebSocket client disconnected');
   });
-  
+
   ws.on('error', (error) => {
     console.error('🔌 WebSocket error:', error);
   });
@@ -362,7 +362,7 @@ let isLive = false; // Track if the connected user is currently live streaming
 async function connectToTikTok(targetUsername) {
   try {
     console.log(`🔄 Starting TikTok connection process for @${targetUsername}`);
-    
+
     // Disconnect existing connection if any
     if (tiktok) {
       try {
@@ -378,18 +378,18 @@ async function connectToTikTok(targetUsername) {
     connectionError = null;
     isLive = false;
     username = targetUsername;
-    
+
     console.log('📡 Broadcasting connection status: connecting');
-    broadcast({ 
-      type: 'connection-status', 
-      status: connectionStatus, 
+    broadcast({
+      type: 'connection-status',
+      status: connectionStatus,
       username: username,
       error: null,
       isLive: false
     });
 
     console.log(`🔗 Creating WebcastPushConnection for @${username}...`);
-    
+
     // Create new connection
     tiktok = new WebcastPushConnection(username, {
       enableExtendedGiftInfo: true,
@@ -402,22 +402,22 @@ async function connectToTikTok(targetUsername) {
     console.log('🚀 Attempting to connect to TikTok Live...');
     // Attempt connection
     await tiktok.connect();
-    
+
     connectionStatus = 'connected';
     isLive = true; // Assume live when connection succeeds
     console.log(`✅ Successfully connected to @${username}`);
-    
+
     console.log('📡 Broadcasting connection success...');
-    broadcast({ 
-      type: 'connection-status', 
-      status: connectionStatus, 
+    broadcast({
+      type: 'connection-status',
+      status: connectionStatus,
       username: username,
       error: null,
       isLive: true
     });
-    
+
     return true;
-    
+
   } catch (error) {
     console.error(`❌ TikTok connection failed for @${targetUsername}:`, error);
     console.error('Error details:', {
@@ -425,20 +425,20 @@ async function connectToTikTok(targetUsername) {
       message: error.message,
       stack: error.stack
     });
-    
+
     connectionStatus = 'error';
     connectionError = error.message;
     isLive = false;
-    
+
     console.log('📡 Broadcasting connection error...');
-    broadcast({ 
-      type: 'connection-status', 
-      status: connectionStatus, 
+    broadcast({
+      type: 'connection-status',
+      status: connectionStatus,
       username: username,
       error: connectionError,
       isLive: false
     });
-    
+
     return false;
   }
 }
@@ -448,51 +448,51 @@ function setupTikTokEventListeners() {
 
   // Gift event listener
   tiktok.on('gift', (data) => {
-  const giftName = (data?.giftName || '').toLowerCase();
-  const displayName = data?.giftName || '';
-  const senderName = data?.uniqueId || 'Unknown';
-  const imageUrl =
-    data?.giftPictureUrl || data?.giftImageUrl || (data?.gift && data.gift.pictureUrl) || null;
-  const ts = Date.now();
-  
-  // Store gift info in dynamic catalog for real image URLs
-  if (displayName && !dynamicGiftCatalog.has(giftName)) {
-    const giftInfo = {
-      id: data?.giftId || data?.gift?.id || giftName,
-      name: displayName,
-      imageUrl: imageUrl,
-      diamondCount: data?.diamondCount || data?.gift?.diamond_count || 0,
-      lastSeen: ts,
-      description: `${displayName} - ${data?.diamondCount || 0} diamonds`
-    };
-    dynamicGiftCatalog.set(giftName, giftInfo);
-    console.log(`Added gift to dynamic catalog: ${displayName} with image: ${imageUrl ? 'YES' : 'NO'}`);
-  }
-  
-  // Compute accurate count increment using streak delta logic
-  const giftType = Number(data?.giftType);
-  const repeatEnd = Boolean(data?.repeatEnd);
-  let countInc = 1;
-  if (giftType === 1) {
-    const currentCount = Math.max(1, Number(data?.repeatCount || 1));
-    const pairKey = `${String(senderName).toLowerCase()}|${giftName}`;
-    const prev = streakLastCountByPair.get(pairKey) || 0;
-    const delta = currentCount - prev;
-    if (delta <= 0) {
-      // No new gifts since last event; ignore duplicate/end events
-      if (repeatEnd) streakLastCountByPair.delete(pairKey);
-      else streakLastCountByPair.set(pairKey, currentCount);
-      return;
+    const giftName = (data?.giftName || '').toLowerCase();
+    const displayName = data?.giftName || '';
+    const senderName = data?.uniqueId || 'Unknown';
+    const imageUrl =
+      data?.giftPictureUrl || data?.giftImageUrl || (data?.gift && data.gift.pictureUrl) || null;
+    const ts = Date.now();
+
+    // Store gift info in dynamic catalog for real image URLs
+    if (displayName && !dynamicGiftCatalog.has(giftName)) {
+      const giftInfo = {
+        id: data?.giftId || data?.gift?.id || giftName,
+        name: displayName,
+        imageUrl: imageUrl,
+        diamondCount: data?.diamondCount || data?.gift?.diamond_count || 0,
+        lastSeen: ts,
+        description: `${displayName} - ${data?.diamondCount || 0} diamonds`
+      };
+      dynamicGiftCatalog.set(giftName, giftInfo);
+      console.log(`Added gift to dynamic catalog: ${displayName} with image: ${imageUrl ? 'YES' : 'NO'}`);
     }
-    countInc = delta;
-    if (repeatEnd) {
-      streakLastCountByPair.delete(pairKey);
-    } else {
-      streakLastCountByPair.set(pairKey, currentCount);
+
+    // Compute accurate count increment using streak delta logic
+    const giftType = Number(data?.giftType);
+    const repeatEnd = Boolean(data?.repeatEnd);
+    let countInc = 1;
+    if (giftType === 1) {
+      const currentCount = Math.max(1, Number(data?.repeatCount || 1));
+      const pairKey = `${String(senderName).toLowerCase()}|${giftName}`;
+      const prev = streakLastCountByPair.get(pairKey) || 0;
+      const delta = currentCount - prev;
+      if (delta <= 0) {
+        // No new gifts since last event; ignore duplicate/end events
+        if (repeatEnd) streakLastCountByPair.delete(pairKey);
+        else streakLastCountByPair.set(pairKey, currentCount);
+        return;
+      }
+      countInc = delta;
+      if (repeatEnd) {
+        streakLastCountByPair.delete(pairKey);
+      } else {
+        streakLastCountByPair.set(pairKey, currentCount);
+      }
     }
-  }
-  console.log(`Gift received: ${giftName} from ${senderName} (+${countInc})`);
-  broadcast({ type: 'gift', giftName, sender: senderName, imageUrl, ts, countInc });
+    console.log(`Gift received: ${giftName} from ${senderName} (+${countInc})`);
+    broadcast({ type: 'gift', giftName, sender: senderName, imageUrl, ts, countInc });
 
     // Enqueue this gift action to run after prior ones complete
     giftActionQueue = giftActionQueue
@@ -507,11 +507,11 @@ function setupTikTokEventListeners() {
     const likeCount = Number(data?.likeCount || 1);
     totalLikes += likeCount;
     console.log(`Like received: +${likeCount} (total: ${totalLikes})`);
-    
+
     // Debug: Log the broadcast message
     const broadcastMsg = { type: 'like', likeCount, totalLikes };
     console.log(`📡 Broadcasting like update:`, broadcastMsg);
-    
+
     broadcast(broadcastMsg);
   });
 
@@ -520,9 +520,9 @@ function setupTikTokEventListeners() {
     connectionStatus = 'connected';
     isLive = true;
     console.log('TikTok Live connected!', state);
-    broadcast({ 
-      type: 'connection-status', 
-      status: connectionStatus, 
+    broadcast({
+      type: 'connection-status',
+      status: connectionStatus,
       username: username,
       error: null,
       isLive: true
@@ -533,9 +533,9 @@ function setupTikTokEventListeners() {
     connectionStatus = 'disconnected';
     isLive = false;
     console.log('TikTok Live disconnected');
-    broadcast({ 
-      type: 'connection-status', 
-      status: connectionStatus, 
+    broadcast({
+      type: 'connection-status',
+      status: connectionStatus,
       username: username,
       error: null,
       isLive: false
@@ -545,15 +545,15 @@ function setupTikTokEventListeners() {
   tiktok.on('streamEnd', () => {
     isLive = false;
     console.log('Stream ended');
-    broadcast({ 
+    broadcast({
       type: 'stream-end',
       connectionStatus,
       username,
       isLive: false
     });
-    broadcast({ 
-      type: 'connection-status', 
-      status: connectionStatus, 
+    broadcast({
+      type: 'connection-status',
+      status: connectionStatus,
       username: username,
       error: null,
       isLive: false
@@ -565,9 +565,9 @@ function setupTikTokEventListeners() {
     connectionError = error.message;
     isLive = false;
     console.error('TikTok Live error:', error);
-    broadcast({ 
-      type: 'connection-status', 
-      status: connectionStatus, 
+    broadcast({
+      type: 'connection-status',
+      status: connectionStatus,
       username: username,
       error: connectionError,
       isLive: false
@@ -583,15 +583,15 @@ async function disconnectFromTikTok() {
       connectionError = null;
       isLive = false;
       console.log('✅ Disconnected from TikTok Live');
-      
-      broadcast({ 
-        type: 'connection-status', 
-        status: connectionStatus, 
+
+      broadcast({
+        type: 'connection-status',
+        status: connectionStatus,
         username: username,
         error: null,
         isLive: false
       });
-      
+
     } catch (error) {
       console.error('Error disconnecting:', error);
     }
@@ -752,12 +752,12 @@ async function processGiftStackCumulativeHold(giftNameLower, count, action) {
       const tmpV2 = path.join(os.tmpdir(), `ttlrl_cumulative_${Date.now()}_${Math.random().toString(36).slice(2)}_v2.ahk`);
       fs.writeFileSync(tmpV2, v2script, 'utf8');
       const v2ok = await runAhk(ahkPath, tmpV2);
-      try { fs.unlinkSync(tmpV2); } catch {}
+      try { fs.unlinkSync(tmpV2); } catch { }
       if (!v2ok) {
         const tmpV1 = path.join(os.tmpdir(), `ttlrl_cumulative_${Date.now()}_${Math.random().toString(36).slice(2)}_v1.ahk`);
         fs.writeFileSync(tmpV1, v1script, 'utf8');
         await runAhk(ahkPath, tmpV1);
-        try { fs.unlinkSync(tmpV1); } catch {}
+        try { fs.unlinkSync(tmpV1); } catch { }
       }
     } else {
       // Default to nodesender - hold for total duration
@@ -785,7 +785,8 @@ async function processGiftStackBatchAhk(giftNameLower, count, key, durationMs) {
   lines.push('SetKeyDelay -1, -1');
 
   if (titleMatch) {
-    lines.push(`title := "${titleMatch}"`);
+    const safeTitle = escapeAhkString(titleMatch);
+    lines.push(`title := "${safeTitle}"`);
     lines.push('h := WinExist(title)');
     lines.push('if (h) {');
     lines.push('  WinActivate "ahk_id " h');
@@ -794,10 +795,11 @@ async function processGiftStackBatchAhk(giftNameLower, count, key, durationMs) {
   }
 
   // Rapid key presses
+  const safeKey = sanitizeAhkLabel(ahkKey);
   for (let i = 0; i < count; i++) {
-    lines.push(`Send "{${ahkKey} down}"`);
+    lines.push(`Send "{${safeKey} down}"`);
     lines.push(`Sleep ${Math.max(1, Math.floor(durationMs))}`);
-    lines.push(`Send "{${ahkKey} up}"`);
+    lines.push(`Send "{${safeKey} up}"`);
     if (i < count - 1) {
       lines.push('Sleep 10'); // 10ms delay between presses
     }
@@ -808,7 +810,7 @@ async function processGiftStackBatchAhk(giftNameLower, count, key, durationMs) {
   const tmp = path.join(os.tmpdir(), `ttlrl_stack_${Date.now()}_${Math.random().toString(36).slice(2)}.ahk`);
   fs.writeFileSync(tmp, lines.join('\n'), 'utf8');
   await runAhk(ahkPath, tmp);
-  try { fs.unlinkSync(tmp); } catch {}
+  try { fs.unlinkSync(tmp); } catch { }
 }
 
 async function processGiftStackBatchNodesender(giftNameLower, count, key, durationMs) {
@@ -858,12 +860,12 @@ async function executeGiftAction(giftNameLower, action, senderName) {
         const tmpV2 = path.join(os.tmpdir(), `ttlrl_mouse_${Date.now()}_${Math.random().toString(36).slice(2)}_v2.ahk`);
         fs.writeFileSync(tmpV2, v2script, 'utf8');
         const v2ok = await runAhk(ahkPath, tmpV2);
-        try { fs.unlinkSync(tmpV2); } catch {}
+        try { fs.unlinkSync(tmpV2); } catch { }
         if (!v2ok) {
           const tmpV1 = path.join(os.tmpdir(), `ttlrl_mouse_${Date.now()}_${Math.random().toString(36).slice(2)}_v1.ahk`);
           fs.writeFileSync(tmpV1, v1script, 'utf8');
           await runAhk(ahkPath, tmpV1);
-          try { fs.unlinkSync(tmpV1); } catch {}
+          try { fs.unlinkSync(tmpV1); } catch { }
         }
         return;
       }
@@ -900,12 +902,12 @@ async function executeGiftAction(giftNameLower, action, senderName) {
       const tmpV2 = path.join(os.tmpdir(), `ttlrl_${Date.now()}_${Math.random().toString(36).slice(2)}_v2.ahk`);
       fs.writeFileSync(tmpV2, v2script, 'utf8');
       const v2ok = await runAhk(ahkPath, tmpV2);
-      try { fs.unlinkSync(tmpV2); } catch {}
+      try { fs.unlinkSync(tmpV2); } catch { }
       if (!v2ok) {
         const tmpV1 = path.join(os.tmpdir(), `ttlrl_${Date.now()}_${Math.random().toString(36).slice(2)}_v1.ahk`);
         fs.writeFileSync(tmpV1, v1script, 'utf8');
         await runAhk(ahkPath, tmpV1);
-        try { fs.unlinkSync(tmpV1); } catch {}
+        try { fs.unlinkSync(tmpV1); } catch { }
       }
     } else {
       sender.startBatch();
@@ -1005,12 +1007,12 @@ async function handleGiftByName(giftNameLower, senderName, countInc = 1) {
         const tmpV2 = path.join(os.tmpdir(), `ttlrl_mouse_${Date.now()}_${Math.random().toString(36).slice(2)}_v2.ahk`);
         fs.writeFileSync(tmpV2, v2script, 'utf8');
         const v2ok = await runAhk(ahkPath, tmpV2);
-        try { fs.unlinkSync(tmpV2); } catch {}
+        try { fs.unlinkSync(tmpV2); } catch { }
         if (!v2ok) {
           const tmpV1 = path.join(os.tmpdir(), `ttlrl_mouse_${Date.now()}_${Math.random().toString(36).slice(2)}_v1.ahk`);
           fs.writeFileSync(tmpV1, v1script, 'utf8');
           await runAhk(ahkPath, tmpV1);
-          try { fs.unlinkSync(tmpV1); } catch {}
+          try { fs.unlinkSync(tmpV1); } catch { }
         }
         lastFiredAtByGift[giftNameLower] = Date.now();
         return;
@@ -1081,12 +1083,12 @@ async function handleGiftByName(giftNameLower, senderName, countInc = 1) {
       const tmpV2 = path.join(os.tmpdir(), `ttlrl_${Date.now()}_${Math.random().toString(36).slice(2)}_v2.ahk`);
       fs.writeFileSync(tmpV2, v2script, 'utf8');
       const v2ok = await runAhk(ahkPath, tmpV2);
-      try { fs.unlinkSync(tmpV2); } catch {}
+      try { fs.unlinkSync(tmpV2); } catch { }
       if (!v2ok) {
         const tmpV1 = path.join(os.tmpdir(), `ttlrl_${Date.now()}_${Math.random().toString(36).slice(2)}_v1.ahk`);
         fs.writeFileSync(tmpV1, v1script, 'utf8');
         await runAhk(ahkPath, tmpV1);
-        try { fs.unlinkSync(tmpV1); } catch {}
+        try { fs.unlinkSync(tmpV1); } catch { }
       }
       lastFiredAtByGift[giftNameLower] = Date.now();
       return;
@@ -1119,6 +1121,27 @@ async function handleGiftByName(giftNameLower, senderName, countInc = 1) {
   }
 }
 
+// --- Security Sanitization Helpers ---
+
+/**
+ * Escapes a string for use inside an AHK double-quoted string literal.
+ * In AHK, double quotes are escaped by doubling them ("").
+ */
+function escapeAhkString(str) {
+  if (typeof str !== 'string') return '';
+  return str.replace(/"/g, '""');
+}
+
+/**
+ * Sanitizes a key label or window title keyword to prevent escaping the AHK command context.
+ * For keys used inside {}, we only allow alphanumeric characters and basic punctuation.
+ */
+function sanitizeAhkLabel(str) {
+  if (typeof str !== 'string') return '';
+  // Only allow alphanumeric, space, and a few safe punctuation characters
+  return str.replace(/[^a-zA-Z0-9\s_\-\[\]]/g, '');
+}
+
 function mapKeyToAhk(key) {
   const simple = {
     'enter': 'Enter',
@@ -1132,45 +1155,50 @@ function mapKeyToAhk(key) {
     'right_click': 'RButton',
     'mouse_right': 'RButton',
   };
-  return simple[key] || key;
+  const mapped = simple[key] || key;
+  return sanitizeAhkLabel(mapped);
 }
 
 function buildAhkHoldScriptV1(ahkKey, durationMs, titleKeyword) {
+  const safeKey = sanitizeAhkLabel(ahkKey);
+  const safeTitle = escapeAhkString(titleKeyword);
   const lines = [];
   lines.push('SetTitleMatchMode, 2');
   lines.push('SendMode, Input');
   lines.push('SetKeyDelay, -1, -1');
   if (titleKeyword) {
-    lines.push(`title := "${titleKeyword}"`);
+    lines.push(`title := "${safeTitle}"`);
     lines.push('IfWinExist, %title%');
     lines.push('{');
     lines.push('  WinActivate, %title%');
     lines.push('  WinWaitActive, %title%,,1');
     lines.push('}');
   }
-  lines.push(`Send, {${ahkKey} down}`);
+  lines.push(`Send, {${safeKey} down}`);
   lines.push(`Sleep, ${Math.max(0, Math.floor(durationMs))}`);
-  lines.push(`Send, {${ahkKey} up}`);
+  lines.push(`Send, {${safeKey} up}`);
   lines.push('ExitApp');
   return lines.join('\n');
 }
 
 function buildAhkHoldScriptV2(ahkKey, durationMs, titleKeyword) {
+  const safeKey = sanitizeAhkLabel(ahkKey);
+  const safeTitle = escapeAhkString(titleKeyword);
   const lines = [];
   lines.push('#SingleInstance Force');
   lines.push('SendMode "Input"');
   lines.push('SetKeyDelay -1, -1');
   if (titleKeyword) {
-    lines.push(`title := "${titleKeyword}"`);
+    lines.push(`title := "${safeTitle}"`);
     lines.push('h := WinExist(title)');
     lines.push('if (h) {');
     lines.push('  WinActivate "ahk_id " h');
     lines.push('  WinWaitActive "ahk_id " h,,1');
     lines.push('}');
   }
-  lines.push(`Send "{${ahkKey} down}"`);
+  lines.push(`Send "{${safeKey} down}"`);
   lines.push(`Sleep ${Math.max(0, Math.floor(durationMs))}`);
-  lines.push(`Send "{${ahkKey} up}"`);
+  lines.push(`Send "{${safeKey} up}"`);
   lines.push('ExitApp');
   return lines.join('\n');
 }
@@ -1187,42 +1215,46 @@ function runAhk(ahkPath, scriptPath) {
 async function runAhkSequence(steps) {
   // Build a minimal AHK v2 script first
   const titleKeyword = targetWindowKeyword;
+  const safeTitle = escapeAhkString(titleKeyword);
   const lines = [];
   lines.push('#SingleInstance Force');
   lines.push('SendMode "Input"');
   lines.push('SetKeyDelay -1, -1');
   if (titleKeyword) {
-    lines.push(`title := "${titleKeyword}"`);
+    lines.push(`title := "${safeTitle}"`);
     lines.push('h := WinExist(title)');
-    lines.push('if (h) {' );
+    lines.push('if (h) {');
     lines.push('  WinActivate "ahk_id " h');
     lines.push('  WinWaitActive "ahk_id " h,,1');
     lines.push('}');
   }
   for (const s of steps) {
     const delay = Math.max(0, Number(s.delayMs || 0));
+    const safeKey = sanitizeAhkLabel(String(s.key || '').toLowerCase());
+    const ahkKey = mapKeyToAhk(safeKey);
+
     if (s.kind === 'keyTap') {
       lines.push(`Sleep ${delay}`);
-      lines.push(`Send "{${mapKeyToAhk(String(s.key || '').toLowerCase())}}"`);
+      lines.push(`Send "{${ahkKey}}"`);
     } else if (s.kind === 'keyDown') {
       lines.push(`Sleep ${delay}`);
-      lines.push(`Send "{${mapKeyToAhk(String(s.key || '').toLowerCase())} down}"`);
+      lines.push(`Send "{${ahkKey} down}"`);
     } else if (s.kind === 'keyUp') {
       lines.push(`Sleep ${delay}`);
-      lines.push(`Send "{${mapKeyToAhk(String(s.key || '').toLowerCase())} up}"`);
+      lines.push(`Send "{${ahkKey} up}"`);
     } else if (s.kind === 'text') {
       lines.push(`Sleep ${delay}`);
-      // Escape quotes in text
-      const text = String(s.text || '').replace(/"/g, '""');
+      // Escape for AHK string
+      const text = escapeAhkString(String(s.text || ''));
       lines.push(`Send "${text}"`);
     } else if (s.kind === 'wait') {
       lines.push(`Sleep ${delay}`);
     } else if (s.kind === 'combo' && Array.isArray(s.keys)) {
       lines.push(`Sleep ${delay}`);
-      const combo = s.keys.map((k) => mapKeyToAhk(String(k || '').toLowerCase())).join(' & ');
+      const safeKeys = s.keys.map(k => mapKeyToAhk(String(k || '').toLowerCase()));
       // AHK combo send as down then up in order
-      for (const k of s.keys) lines.push(`Send "{${mapKeyToAhk(String(k || '').toLowerCase())} down}"`);
-      for (let i = s.keys.length - 1; i >= 0; i--) lines.push(`Send "{${mapKeyToAhk(String(s.keys[i] || '').toLowerCase())} up}"`);
+      for (const k of safeKeys) lines.push(`Send "{${k} down}"`);
+      for (let i = safeKeys.length - 1; i >= 0; i--) lines.push(`Send "{${safeKeys[i]} up}"`);
     }
   }
   lines.push('ExitApp');
@@ -1232,7 +1264,7 @@ async function runAhkSequence(steps) {
   const tmp = path.join(os.tmpdir(), `ttlrl_seq_${Date.now()}_${Math.random().toString(36).slice(2)}_v2.ahk`);
   fs.writeFileSync(tmp, v2, 'utf8');
   const ok = await runAhk(ahkPath, tmp);
-  try { fs.unlinkSync(tmp); } catch {}
+  try { fs.unlinkSync(tmp); } catch { }
   if (ok) return;
 
   // Fallback to v1
@@ -1244,7 +1276,7 @@ async function runAhkSequence(steps) {
   const tmp1 = path.join(os.tmpdir(), `ttlrl_seq_${Date.now()}_${Math.random().toString(36).slice(2)}_v1.ahk`);
   fs.writeFileSync(tmp1, v1, 'utf8');
   await runAhk(ahkPath, tmp1);
-  try { fs.unlinkSync(tmp1); } catch {}
+  try { fs.unlinkSync(tmp1); } catch { }
 }
 
 async function runNodesenderSequence(steps) {

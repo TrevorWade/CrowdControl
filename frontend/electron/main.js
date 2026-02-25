@@ -4,11 +4,20 @@ const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const net = require('net');
+const { execFile } = require('child_process');
+// Optional: window enumeration (Windows-only usage). Keep import resilient.
+let windowManager = null;
+try {
+  ({ windowManager } = require('node-window-manager'));
+} catch {}
 
 // Keep a global reference of the window object
 // If you don't, the window will be closed automatically when the JavaScript object is garbage collected
 let mainWindow;
 let overlayWindow = null;
+// Track focus watch state to avoid multiple concurrent intervals
+let _focusWatchTimer = null;
+let _focusWatchTargetHwnd = null;
 
 function startBackend() {
   const port = Number(process.env.WS_PORT || 5178);
@@ -46,6 +55,185 @@ function startBackend() {
     console.warn('Immediate port listen failed; attempting to start backend anyway:', e.message);
     start();
   }
+}
+
+/**
+ * Windows window listing and focus watch helpers.
+ * These are guarded by process.platform === 'win32' and optional module availability.
+ */
+async function listWindowsWin32() {
+  // Guard: platform/module
+  if (process.platform !== 'win32') {
+    return [];
+  }
+  if (!windowManager) {
+    try { console.warn('[windows] node-window-manager not available; falling back to PowerShell'); } catch {}
+    const psItems = await listWindowsViaPowerShell();
+    return await groupAttachAndSort(psItems);
+  }
+
+  // Enumerate ALL top-level windows; do minimal filtering only for safety
+  let raw = [];
+  try {
+    raw = windowManager.getWindows() || [];
+  } catch {
+    raw = [];
+  }
+
+  const shaped = raw.map((w) => {
+    let title = '';
+    try { title = w.getTitle() || ''; } catch {}
+    let owner = null;
+    try { owner = w.getOwner(); } catch {}
+    let pid = 0;
+    try { pid = Number(w.getProcessId() || 0); } catch {}
+
+    // Fallbacks to ensure every item is presentable
+    const appName = owner && owner.name ? String(owner.name) : '';
+    const usedTitle = title || appName || 'Untitled window';
+    const exePath = owner && owner.path ? String(owner.path) : '';
+
+    return {
+      hwnd: w && typeof w.handle !== 'undefined' ? Number(w.handle) : 0,
+      title: usedTitle,
+      appName,
+      processId: pid,
+      exePath,
+    };
+  });
+
+  // Process native items, falling back to PowerShell if needed
+  let results = await groupAttachAndSort(shaped);
+  if (!results || results.length === 0) {
+    const psItems = await listWindowsViaPowerShell();
+    results = await groupAttachAndSort(psItems);
+  }
+  return results;
+}
+
+/**
+ * Fallback enumerator using PowerShell to list processes with visible main windows.
+ */
+function listWindowsViaPowerShell() {
+  return new Promise((resolve) => {
+    if (process.platform !== 'win32') return resolve([]);
+    const ps = 'Get-Process | Where-Object { $_.MainWindowHandle -ne 0 } | ' +
+      'Select-Object Id,ProcessName,MainWindowTitle,Path,MainWindowHandle | ConvertTo-Json -Depth 3';
+    execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps], { maxBuffer: 5 * 1024 * 1024 }, (err, stdout) => {
+      if (err || !stdout) {
+        try { console.warn('[windows] PowerShell enumeration failed', err && err.message); } catch {}
+        return resolve([]);
+      }
+      try {
+        const parsed = JSON.parse(stdout);
+        const arr = Array.isArray(parsed) ? parsed : [parsed];
+        const items = arr.map((p) => ({
+          hwnd: Number(p.MainWindowHandle || 0),
+          title: String(p.MainWindowTitle || '').trim() || String(p.ProcessName || ''),
+          appName: String(p.ProcessName || ''),
+          processId: Number(p.Id || 0),
+          exePath: String(p.Path || ''),
+        })).filter((x) => x && x.hwnd && x.hwnd > 0);
+        resolve(items);
+      } catch (e) {
+        try { console.warn('[windows] PowerShell JSON parse failed', e && e.message); } catch {}
+        resolve([]);
+      }
+    });
+  });
+}
+
+/**
+ * Apply blacklist/filter, group by executable, attach icons best-effort, and sort.
+ */
+async function groupAttachAndSort(items) {
+  // Basic blacklist of noisy system helpers not useful to users
+  const blacklist = new Set([
+    'Microsoft Text Input Application',
+    'Program Manager',
+  ]);
+
+  // Filter out items without a valid handle or app name in blacklist
+  const filtered = (items || []).filter((x) => {
+    if (!x || !x.hwnd || x.hwnd <= 0) return false;
+    if (x.appName && blacklist.has(x.appName)) return false;
+    return true;
+  });
+
+  // Group by executable path to present one entry per app (like Chrome, Cursor, Spotify)
+  const byExe = new Map();
+  for (const x of filtered) {
+    const key = x.exePath || `${x.appName}:${x.processId}`;
+    const prev = byExe.get(key);
+    if (!prev) {
+      byExe.set(key, x);
+    } else {
+      // Prefer one with a non-generic title (longer)
+      const prevLen = (prev.title || '').length;
+      const curLen = (x.title || '').length;
+      if (curLen > prevLen) byExe.set(key, x);
+    }
+  }
+
+  // Attach icons best-effort; do not block on failures
+  const results = [];
+  for (const x of byExe.values()) {
+    let iconDataUrl;
+    if (x.exePath) {
+      try {
+        const icon = await app.getFileIcon(x.exePath, { size: 'small' });
+        if (icon && typeof icon.toDataURL === 'function') {
+          iconDataUrl = icon.toDataURL();
+        }
+      } catch {}
+    }
+    results.push({ ...x, iconDataUrl });
+  }
+
+  // Sort nicely by appName then title
+  results.sort((a, b) => {
+    const an = (a.appName || '').toLowerCase();
+    const bn = (b.appName || '').toLowerCase();
+    if (an !== bn) return an < bn ? -1 : 1;
+    const at = (a.title || '').toLowerCase();
+    const bt = (b.title || '').toLowerCase();
+    return at < bt ? -1 : at > bt ? 1 : 0;
+  });
+
+  return results;
+}
+
+function getActiveHwndWin32() {
+  if (process.platform !== 'win32' || !windowManager) return undefined;
+  try {
+    const active = windowManager.getActiveWindow();
+    return active ? active.handle : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function startFocusWatchWin32(targetHwnd, onChange) {
+  stopFocusWatchWin32();
+  if (process.platform !== 'win32' || !windowManager) return;
+  _focusWatchTargetHwnd = Number(targetHwnd);
+  let last;
+  _focusWatchTimer = setInterval(() => {
+    let isFocused = false;
+    try { isFocused = getActiveHwndWin32() === _focusWatchTargetHwnd; } catch { isFocused = false; }
+    if (isFocused !== last) {
+      last = isFocused;
+      try { onChange(Boolean(isFocused)); } catch {}
+    }
+  }, 800);
+}
+
+function stopFocusWatchWin32() {
+  if (_focusWatchTimer) {
+    clearInterval(_focusWatchTimer);
+    _focusWatchTimer = null;
+  }
+  _focusWatchTargetHwnd = null;
 }
 
 function createWindow() {
@@ -122,6 +310,8 @@ app.whenReady().then(() => {
   createWindow();
   // Register photo mapping IPC handlers
   registerPhotoMapIpc();
+  // Register Windows window enumeration and focus watcher IPC (safe on other OSes)
+  registerWindowsIpc();
   try {
     autoUpdater.autoDownload = false; // manual download via menu
 
@@ -227,6 +417,33 @@ app.on('activate', () => {
 app.on('ready', () => {
   console.log('TikTok Gift Key Mapper is ready!');
 });
+
+/**
+ * IPC for window listing and focus watching (Windows-only behavior).
+ * Returns empty/no-op on non-Windows to keep app portable.
+ */
+function registerWindowsIpc() {
+  // List open top-level windows
+  ipcMain.handle('windows:list', async () => {
+    if (process.platform !== 'win32') return [];
+    return await listWindowsWin32();
+  });
+
+  // Start focus watcher for a specific hwnd; emits 'windows:focus' events
+  ipcMain.on('windows:watchFocus', (e, hwnd) => {
+    if (process.platform !== 'win32') return;
+    startFocusWatchWin32(Number(hwnd), (isFocused) => {
+      try {
+        e.sender.send('windows:focus', { hwnd: Number(hwnd), isFocused: Boolean(isFocused) });
+      } catch {}
+    });
+  });
+
+  // Stop focus watcher
+  ipcMain.on('windows:stopWatchFocus', () => {
+    stopFocusWatchWin32();
+  });
+}
 
 // IPC implementation for photo mapping operations
 function registerPhotoMapIpc() {
