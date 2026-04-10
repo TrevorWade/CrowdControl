@@ -12,7 +12,120 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 // HTTP server removed: no static gift catalog or fallback endpoints
+
+// ── WS Authentication ────────────────────────────────────────────────────────
+// Use env var if set (allows persistent tokens across restarts), otherwise
+// generate a fresh cryptographically-secure random token each run.
+const WS_TOKEN = (process.env.WS_TOKEN && process.env.WS_TOKEN.trim())
+  ? String(process.env.WS_TOKEN).trim()
+  : crypto.randomBytes(32).toString('hex');
+console.log(`[Auth] WS token ${
+  process.env.WS_TOKEN?.trim() ? 'loaded from .env' : 'generated at startup (add WS_TOKEN=<value> to .env to persist)'
+}`);
+
+// Per-socket auth state: WeakMap<ws, { ok: boolean, timer: ReturnType<typeof setTimeout> | null }>
+const clientAuth = new WeakMap();
+// ────────────────────────────────────────────────────────────────────────────
+
+// ── Per-client rate limiters (sliding window) ─────────────────────────────
+// Stored as WeakMap<ws, { [msgType]: number[] }> where the array holds the
+// timestamps (ms) of recent triggers within the relevant window.
+const clientRateLimits = new WeakMap();
+
+/**
+ * Returns true if the message type is within the allowed rate for this client.
+ * Mutates the timestamp log on success (when allowed).
+ *
+ * @param {import('ws')} ws         - The client socket
+ * @param {string}       msgType    - Message type key (e.g. 'test-gift')
+ * @param {number}       maxCalls   - Max number of calls allowed in windowMs
+ * @param {number}       windowMs   - Sliding window duration in milliseconds
+ */
+function checkRateLimit(ws, msgType, maxCalls, windowMs) {
+  let clientLimits = clientRateLimits.get(ws);
+  if (!clientLimits) {
+    clientLimits = {};
+    clientRateLimits.set(ws, clientLimits);
+  }
+  const now = Date.now();
+  const window = clientLimits[msgType] || [];
+  // Evict timestamps outside the current window
+  const pruned = window.filter((t) => now - t < windowMs);
+  if (pruned.length >= maxCalls) {
+    return false; // rate limit exceeded
+  }
+  pruned.push(now);
+  clientLimits[msgType] = pruned;
+  return true;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Global circuit breaker for giftActionQueue ───────────────────────────────
+// If more than MAX_QUEUE_DEPTH pending actions are queued, additional items
+// are dropped and a queue-flood warning is broadcast to the frontend.
+// Raise this value in .env via MAX_QUEUE_DEPTH if needed.
+const MAX_QUEUE_DEPTH = Number(process.env.MAX_QUEUE_DEPTH) > 0
+  ? Number(process.env.MAX_QUEUE_DEPTH)
+  : 50;
+let giftActionQueueDepth = 0;
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Key allowlist (H-6 fix) ───────────────────────────────────────────────────
+// Any key from a WS message that is NOT in this Set is rejected before it
+// reaches any injection backend (nodesender / AHK).
+// Add entries here whenever a new key alias is supported by the UI.
+const ALLOWED_KEYS = new Set([
+  // ── Letters ──────────────────────────────────────────────────────────────
+  'a','b','c','d','e','f','g','h','i','j','k','l','m',
+  'n','o','p','q','r','s','t','u','v','w','x','y','z',
+  // ── Digits ───────────────────────────────────────────────────────────────
+  '0','1','2','3','4','5','6','7','8','9',
+  // ── Navigation / editing ─────────────────────────────────────────────────
+  'up','down','left','right',
+  'home','end','pageup','pagedown',
+  'insert','delete','backspace',
+  'enter','return','tab','escape','space',
+  // ── Function keys ─────────────────────────────────────────────────────────
+  'f1','f2','f3','f4','f5','f6',
+  'f7','f8','f9','f10','f11','f12',
+  // ── Modifier keys ─────────────────────────────────────────────────────────
+  'shift','ctrl','control','alt','meta','win','lshift','rshift',
+  'lctrl','rctrl','lalt','ralt','lwin','rwin',
+  // ── Numpad ───────────────────────────────────────────────────────────────
+  'num0','num1','num2','num3','num4',
+  'num5','num6','num7','num8','num9',
+  'numpad0','numpad1','numpad2','numpad3','numpad4',
+  'numpad5','numpad6','numpad7','numpad8','numpad9',
+  'numpadenter','numpadadd','numpadsubtract','numpadmultiply','numpaddivide','numpaddot',
+  // ── Punctuation / symbol keys ─────────────────────────────────────────────
+  'minus','plus','equals','underscore',
+  'bracketleft','bracketright','backslash',
+  'semicolon','quote','backquote','tilde',
+  'comma','period','slash',
+  // ── Media / misc ─────────────────────────────────────────────────────────
+  'printscreen','scrolllock','pausebreak','capslock','numlock',
+  'volumeup','volumedown','volumemute',
+  'medianext','mediaprev','mediaplaypause','mediastop',
+  // ── Mouse buttons & aliases (all left/right click variants used in app) ──
+  'left_click','lmouse','mouse_left',
+  'right_click','rmouse','mouse_right',
+  'middle_click','mouse_middle',
+]);
+
+/**
+ * Returns true if `key` is on the approved allowlist.
+ * `key` must already be lowercased before calling.
+ *
+ * @param {string} key
+ * @returns {boolean}
+ */
+function isAllowedKey(key) {
+  return ALLOWED_KEYS.has(key);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 const injectionMode = String(process.env.INJECTION_MODE || 'nodesender').toLowerCase();
 let currentInjectionMode = injectionMode; // can be changed at runtime via WS
 // Optional focus guard to avoid sending keys to the wrong window (runtime-settable)
@@ -31,7 +144,7 @@ const GIFT_STACKING_WINDOW_MS = 2000; // 2 seconds to accumulate gifts
 let giftStackingEnabled = true; // Global toggle
 
 // Stacking state: { [giftNameLower]: { count, lastReceived, timeoutId } }
-let giftStacks = {};
+let giftStacks = Object.create(null); // null prototype prevents prototype pollution via crafted gift names
 
 // Dynamic gift catalog collected from live events
 let dynamicGiftCatalog = new Map(); // giftName -> { id, name, imageUrl, diamondCount, lastSeen }
@@ -47,20 +160,37 @@ const wss = new WebSocketServer({ port }, () => {
   console.log(`WS listening on ws://localhost:${port}`);
 });
 
-// Broadcast helper
+// Broadcast helper — only sends to fully-authenticated clients
 function broadcast(payload) {
   const message = JSON.stringify(payload);
-  const clientCount = wss.clients.size;
-  console.log(`📡 Broadcasting to ${clientCount} clients:`, payload.type);
-
+  let sent = 0;
   wss.clients.forEach((client) => {
-    if (client.readyState === 1) {
-      client.send(message);
-      console.log(`✅ Sent to client ${client._id || 'unknown'}`);
-    } else {
-      console.log(`❌ Client ${client._id || 'unknown'} not ready (state: ${client.readyState})`);
+    if (client.readyState === 1 && clientAuth.get(client)?.ok) {
+      try { client.send(message); sent++; } catch {}
     }
   });
+  console.log(`📡 Broadcast [${payload.type}] → ${sent} authenticated client(s)`);
+}
+
+// Send the full backend state to a newly-authenticated client
+function sendInit(ws) {
+  try {
+    ws.send(JSON.stringify({
+      type: 'init',
+      mapping: giftToAction,
+      paused: isPaused,
+      injectionMode: currentInjectionMode,
+      stackingEnabled: giftStackingEnabled,
+      totalLikes,
+      connectionStatus,
+      username,
+      connectionError,
+      isLive,
+      targetWindowKeyword
+    }));
+  } catch (e) {
+    console.error('[Auth] Failed to send init to client:', e);
+  }
 }
 
 // Return { ok: boolean, title?: string, owner?: string }
@@ -86,29 +216,63 @@ async function checkTargetWindowFocused() {
 wss.on('connection', (ws) => {
   console.log('🔌 New WebSocket client connected');
 
-  // Send current state to new client
-  ws.send(JSON.stringify({
-    type: 'init',
-    mapping: giftToAction,
-    paused: isPaused,
-    injectionMode: currentInjectionMode,
-    stackingEnabled: giftStackingEnabled,
-    totalLikes,
-    connectionStatus,
-    username,
-    connectionError,
-    isLive,
-    targetWindowKeyword
-  }));
+  // ── Per-socket auth setup ─────────────────────────────────────────────────
+  // Client must send { type: 'auth', token } as its very first message.
+  // If no valid auth arrives within 5 seconds, the connection is closed.
+  const authTimer = setTimeout(() => {
+    const state = clientAuth.get(ws);
+    if (state && !state.ok) {
+      console.warn('[Auth] Client did not authenticate within 5 s; closing');
+      try { ws.close(4401, 'Authentication timeout'); } catch {}
+    }
+  }, 5000);
+  clientAuth.set(ws, { ok: false, timer: authTimer });
+  // ─────────────────────────────────────────────────────────────────────────
 
   ws.on('message', async (raw) => {
     try {
       const msg = JSON.parse(raw.toString());
       console.log(`📨 Received WebSocket message: ${msg.type}`);
 
+      // ── Authentication gate ───────────────────────────────────────────────
+      const authState = clientAuth.get(ws);
+      if (!authState?.ok) {
+        if (msg.type !== 'auth') {
+          console.warn(`[Auth] ❌ Unauthenticated message type "${msg.type}" from client; closing. Client should send "auth" first.`);
+          try { ws.send(JSON.stringify({ type: 'auth-error', error: 'First message must be authentication' })); } catch {}
+          try { ws.close(4401, 'First message must be authentication'); } catch {}
+          return;
+        }
+        if (!msg.token || msg.token !== WS_TOKEN) {
+          console.warn(`[Auth] ❌ Invalid WS token received (Length: ${msg.token?.length || 0}). Closing connection.`);
+          try { ws.send(JSON.stringify({ type: 'auth-error', error: 'Invalid token' })); } catch {}
+          try { ws.close(4401, 'Invalid authentication token'); } catch {}
+          return;
+        }
+        // ✅ Valid token — mark authenticated, cancel deadline, send state
+        if (authState.timer) clearTimeout(authState.timer);
+        authState.ok = true;
+        console.log('[Auth] ✅ Client authenticated successfully');
+        try { ws.send(JSON.stringify({ type: 'auth-ok' })); } catch {}
+        sendInit(ws);
+        return;
+      }
+      // ── End authentication gate ───────────────────────────────────────────
+
       if (msg.type === 'update-mapping') {
-        // Entire mapping replaces current one
-        giftToAction = msg.mapping || {};
+        // Validate each mapped key against the allowlist before storing.
+        // Keys that fail validation are removed and a warning is logged.
+        const rawMapping = msg.mapping || {};
+        const safeMapping = {};
+        for (const [giftName, action] of Object.entries(rawMapping)) {
+          const key = String(action?.key || '').toLowerCase();
+          if (!isAllowedKey(key)) {
+            console.warn(`[Allowlist] update-mapping: rejected disallowed key "${key}" for gift "${giftName}"`);
+            continue;
+          }
+          safeMapping[giftName] = action;
+        }
+        giftToAction = safeMapping;
         broadcast({ type: 'mapping-updated', mapping: giftToAction });
       }
 
@@ -118,6 +282,18 @@ wss.on('connection', (ws) => {
       }
 
       if (msg.type === 'test-gift') {
+        // Rate limit: max 1 trigger per 500 ms per client
+        if (!checkRateLimit(ws, 'test-gift', 1, 500)) {
+          console.warn('[RateLimit] test-gift throttled for client');
+          try { ws.send(JSON.stringify({ type: 'rate-limited', msgType: 'test-gift', retryAfterMs: 500 })); } catch {}
+          return;
+        }
+        // Circuit breaker: reject if queue is saturated
+        if (giftActionQueueDepth >= MAX_QUEUE_DEPTH) {
+          console.warn(`[CircuitBreaker] Queue depth ${giftActionQueueDepth}/${MAX_QUEUE_DEPTH}; dropping test-gift`);
+          try { ws.send(JSON.stringify({ type: 'queue-flood', queueDepth: giftActionQueueDepth, max: MAX_QUEUE_DEPTH })); } catch {}
+          return;
+        }
         // For Test Mode: simulate receiving a gift by name
         const giftName = String(msg.giftName || '').toLowerCase();
         const delayMs = Number(msg.delayMs || 0);
@@ -128,12 +304,20 @@ wss.on('connection', (ws) => {
         } else {
           console.log(`[TEST] Simulate gift: ${giftName}`);
         }
+        giftActionQueueDepth++;
         giftActionQueue = giftActionQueue
           .then(() => handleGiftByName(giftName, 'TestUser', countInc))
-          .catch((err) => console.error('Test gift action error:', err));
+          .catch((err) => console.error('Test gift action error:', err))
+          .finally(() => { giftActionQueueDepth = Math.max(0, giftActionQueueDepth - 1); });
       }
 
       if (msg.type === 'test-like-trigger') {
+        // Rate limit: max 1 trigger per 500 ms per client
+        if (!checkRateLimit(ws, 'test-like-trigger', 1, 500)) {
+          console.warn('[RateLimit] test-like-trigger throttled for client');
+          try { ws.send(JSON.stringify({ type: 'rate-limited', msgType: 'test-like-trigger', retryAfterMs: 500 })); } catch {}
+          return;
+        }
         // Test a like trigger by simulating like events to reach the threshold
         const triggerKey = msg.triggerKey?.trim();
         const targetLikes = parseInt(msg.targetLikes);
@@ -155,6 +339,13 @@ wss.on('connection', (ws) => {
             setTimeout(async () => {
               // Use the same key injection logic as gifts
               const key = String(triggerKey).toLowerCase();
+
+              // Key allowlist validation (H-6)
+              if (!isAllowedKey(key)) {
+                console.warn(`[Allowlist] test-like-trigger: rejected disallowed key "${key}"`);
+                return;
+              }
+
               const durationMs = 1000; // 1 second duration for test
 
               // Focus guard
@@ -226,9 +417,30 @@ wss.on('connection', (ws) => {
       }
 
       if (msg.type === 'like-key') {
+        // Rate limit: max 10 triggers per second per client
+        if (!checkRateLimit(ws, 'like-key', 10, 1000)) {
+          console.warn('[RateLimit] like-key throttled for client');
+          try { ws.send(JSON.stringify({ type: 'rate-limited', msgType: 'like-key', retryAfterMs: 100 })); } catch {}
+          return;
+        }
         // Handle like-triggered key press using same mechanism as gift mappings
         const key = String(msg.key || '').toLowerCase();
+
+        // Key allowlist validation (H-6)
+        if (!isAllowedKey(key)) {
+          console.warn(`[Allowlist] like-key: rejected disallowed key "${key}"`);
+          try { ws.send(JSON.stringify({ type: 'key-rejected', key, reason: 'Key not on allowlist' })); } catch {}
+          return;
+        }
+
         const durationMs = Math.max(0, Number(msg.durationMs || 300));
+
+        // Circuit breaker: like-key uses the same shared queue — drop if saturated
+        if (giftActionQueueDepth >= MAX_QUEUE_DEPTH) {
+          console.warn(`[CircuitBreaker] Queue depth ${giftActionQueueDepth}/${MAX_QUEUE_DEPTH}; dropping like-key "${key}"`);
+          try { ws.send(JSON.stringify({ type: 'queue-flood', queueDepth: giftActionQueueDepth, max: MAX_QUEUE_DEPTH })); } catch {}
+          return;
+        }
 
         if (isPaused) {
           console.log('Paused; ignoring like key trigger');
@@ -343,6 +555,10 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
+    // Clean up auth state to prevent timer leaks
+    const state = clientAuth.get(ws);
+    if (state?.timer) clearTimeout(state.timer);
+    clientAuth.delete(ws);
     console.log('🔌 WebSocket client disconnected');
   });
 
@@ -390,9 +606,32 @@ async function connectToTikTok(targetUsername) {
 
     console.log(`🔗 Creating WebcastPushConnection for @${username}...`);
 
+    // TikTok blocks unauthenticated WebSocket upgrades with DEVICE_BLOCKED / 415.
+    // A valid sessionId cookie from a logged-in TikTok account bypasses this.
+    // Set TIKTOK_SESSION_ID in backend/.env to enable authenticated connections.
+    const sessionId = (process.env.TIKTOK_SESSION_ID || '').trim();
+    const targetIdc = (process.env.TIKTOK_TARGET_IDC || '').trim();
+    const signApiKey = (process.env.TIKTOK_SIGN_API_KEY || '').trim();
+    
+    if (!sessionId) {
+      console.warn(
+        '[TikTok] ⚠️  TIKTOK_SESSION_ID is not set in .env.\n' +
+        '         Connections will likely fail with DEVICE_BLOCKED.\n' +
+        '         See backend/.env.example for instructions on getting your sessionId.'
+      );
+    }
+
     // Create new connection
     tiktok = new WebcastPushConnection(username, {
-      enableExtendedGiftInfo: true,
+      // enableExtendedGiftInfo adds extra API round-trips that increase detection risk
+      enableExtendedGiftInfo: false,
+      // Pass the EulerStream API key if provided to bypass shared rate limits
+      signApiKey: signApiKey || undefined,
+      // sessionId is required by TikTok to allow WebSocket upgrades from non-browser clients
+      ...(sessionId ? { 
+        sessionId,
+        ttTargetIdc: targetIdc
+      } : {}),
     });
 
     console.log('🎧 Setting up TikTok event listeners...');
@@ -495,11 +734,19 @@ function setupTikTokEventListeners() {
     broadcast({ type: 'gift', giftName, sender: senderName, imageUrl, ts, countInc });
 
     // Enqueue this gift action to run after prior ones complete
+    // Circuit breaker: if the queue is above MAX_QUEUE_DEPTH, drop and warn
+    if (giftActionQueueDepth >= MAX_QUEUE_DEPTH) {
+      console.warn(`[CircuitBreaker] Queue depth ${giftActionQueueDepth}/${MAX_QUEUE_DEPTH}; dropping gift "${giftName}"`);
+      broadcast({ type: 'queue-flood', queueDepth: giftActionQueueDepth, max: MAX_QUEUE_DEPTH });
+      return;
+    }
+    giftActionQueueDepth++;
     giftActionQueue = giftActionQueue
       .then(() => handleGiftByName(giftName, senderName, countInc))
       .catch((err) => {
         console.error('Gift action error:', err);
-      });
+      })
+      .finally(() => { giftActionQueueDepth = Math.max(0, giftActionQueueDepth - 1); });
   });
 
   // Like event listener for tracking total likes
@@ -1045,31 +1292,6 @@ async function handleGiftByName(giftNameLower, senderName, countInc = 1) {
     }
 
     console.log(`Press key "${key}" for ${durationMs}ms (mode=${currentInjectionMode}) (from ${senderName})`);
-    if (currentInjectionMode === 'nutjs') {
-      const { keyboard, Key, sleep } = require('@nut-tree/nut-js');
-      const map = {
-        'enter': Key.Enter,
-        'space': Key.Space,
-        'w': Key.W,
-        'a': Key.A,
-        's': Key.S,
-        'd': Key.D,
-        'up': Key.Up,
-        'down': Key.Down,
-        'left': Key.Left,
-        'right': Key.Right,
-      };
-      const mapped = map[key];
-      if (!mapped) {
-        console.warn(`nutjs: unsupported key "${key}"; falling back to node-key-sender`);
-      } else {
-        await keyboard.pressKey(mapped);
-        await sleep(durationMs);
-        await keyboard.releaseKey(mapped);
-        lastFiredAtByGift[giftNameLower] = Date.now();
-        return;
-      }
-    }
 
     if (currentInjectionMode === 'autohotkey') {
       const ahkPath = process.env.AHK_PATH || 'AutoHotkey.exe';
@@ -1307,5 +1529,9 @@ async function runNodesenderSequence(steps) {
 }
 
 // HTTP server removed; no static catalog endpoints. All data comes from live events.
+
+// Export the WS auth token so that Electron's main process can forward it to
+// the renderer via secure IPC (main.js → preload.js → window.electronAuth).
+module.exports = { WS_TOKEN };
 
 

@@ -17,6 +17,19 @@ contextBridge.exposeInMainWorld('photoMap', {
   openOverlayWindow: () => ipcRenderer.invoke('overlay:open'),
 });
 
+// TikTok Account Connection
+contextBridge.exposeInMainWorld('tiktokAPI', {
+  startLogin: () => ipcRenderer.invoke('tiktok:startLogin'),
+});
+
+
+// Expose the WS auth token to the renderer process via a secure, sandboxed channel.
+// The token originates from backend/index.js, is captured by main.js after require(),
+// and forwarded here so ws.ts can authenticate the WebSocket connection on open.
+contextBridge.exposeInMainWorld('electronAuth', {
+  /** Returns the WS auth token string, or null if not yet available. */
+  getWsToken: () => ipcRenderer.invoke('auth:getWsToken'),
+});
 
 // Windows-only window enumeration and focus watch (no-op gracefully on other OSes)
 contextBridge.exposeInMainWorld('windowsAPI', {

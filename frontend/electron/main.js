@@ -18,6 +18,10 @@ let overlayWindow = null;
 // Track focus watch state to avoid multiple concurrent intervals
 let _focusWatchTimer = null;
 let _focusWatchTargetHwnd = null;
+// WS authentication token — populated once the backend module is required.
+// Falls back to WS_TOKEN env var for the edge-case where the backend was
+// started externally (port already in use) and the same env var was set there.
+let _wsToken = (process.env.WS_TOKEN && process.env.WS_TOKEN.trim()) ? process.env.WS_TOKEN.trim() : null;
 
 function startBackend() {
   const port = Number(process.env.WS_PORT || 5178);
@@ -29,7 +33,13 @@ function startBackend() {
       const backendEntry = isDev
         ? path.join(__dirname, '../../backend/index.js')
         : path.join(process.resourcesPath, 'backend', 'index.js');
-      require(backendEntry);
+      const backendModule = require(backendEntry);
+      // Capture the WS auth token exported by the backend module so we can
+      // forward it to the renderer via secure IPC (auth:getWsToken).
+      if (backendModule && typeof backendModule.WS_TOKEN === 'string') {
+        _wsToken = backendModule.WS_TOKEN;
+        console.log('[Auth] WS token acquired from backend module');
+      }
       console.log('Backend started from:', backendEntry);
     } catch (err) {
       console.error('Failed to start backend:', err);
@@ -259,9 +269,10 @@ function createWindow() {
   });
 
   // Load your app based on environment
-  // In development, always load from Vite dev server
-  // In production, load from built files
-  const devServerUrl = 'http://localhost:5173';
+  // In development, prefer the port from env, otherwise default to 5173.
+  const vitePort = process.env.VITE_PORT || '5173';
+  const devServerUrl = `http://localhost:${vitePort}`;
+  console.log(`[Electron] Development mode: loading from ${devServerUrl}`);
   const loadProduction = () => {
     const indexPath = path.join(__dirname, '../dist/index.html');
     console.log('Loading from:', indexPath);
@@ -296,9 +307,20 @@ function createWindow() {
     mainWindow = null;
   });
 
-  // Handle external links (open in default browser)
+  // Handle external links (open in default browser).
+  // Security: only allow http / https URLs to reach the OS shell.
+  // Any other scheme (javascript:, file:, data:, …) is silently denied.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+        shell.openExternal(url);
+      } else {
+        console.warn(`[Security] Blocked shell.openExternal for disallowed protocol: ${parsed.protocol} (url: ${url})`);
+      }
+    } catch (e) {
+      console.warn(`[Security] Blocked shell.openExternal for unparseable URL: ${url}`);
+    }
     return { action: 'deny' };
   });
 }
@@ -312,6 +334,9 @@ app.whenReady().then(() => {
   registerPhotoMapIpc();
   // Register Windows window enumeration and focus watcher IPC (safe on other OSes)
   registerWindowsIpc();
+  // Expose the WS auth token to the renderer over a secure, sandboxed IPC channel.
+  // The preload script forwards this to window.electronAuth.getWsToken().
+  ipcMain.handle('auth:getWsToken', () => _wsToken);
   try {
     autoUpdater.autoDownload = false; // manual download via menu
 
@@ -388,6 +413,9 @@ app.whenReady().then(() => {
   ];
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
+
+  // Register TikTok Login IPC handler
+  registerTikTokIpc();
 });
 
 // Quit when all windows are closed
@@ -405,13 +433,39 @@ app.on('activate', () => {
   }
 });
 
-  // Security: prevent new window creation
-  app.on('web-contents-created', (event, contents) => {
-    contents.on('new-window', (event, navigationUrl) => {
-      event.preventDefault();
-      shell.openExternal(navigationUrl);
-    });
+app.on('web-contents-created', (event, contents) => {
+  contents.setWindowOpenHandler(({ url }) => {
+    try {
+      const parsed = new URL(url);
+      
+      // Senior Dev Fix: Allow OAuth popups for Google/Apple/TikTok login flows
+      // These usually need a new window to complete the authentication
+      const isAuthPopup = [
+        'accounts.google.com',
+        'appleid.apple.com',
+        'www.tiktok.com'
+      ].some(domain => parsed.hostname.includes(domain));
+
+      if (isAuthPopup) {
+        // Allow the window to open as a popup within Electron
+        return { action: 'allow', overrideBrowserWindowOptions: {
+          width: 500,
+          height: 600,
+          autoHideMenuBar: true,
+        }};
+      }
+
+      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+        shell.openExternal(url);
+      } else {
+        console.warn(`[Security] Blocked shell.openExternal (web-contents-created) for disallowed protocol: ${parsed.protocol} (url: ${url})`);
+      }
+    } catch (e) {
+      console.warn(`[Security] Blocked shell.openExternal (web-contents-created) for unparseable URL: ${url}`);
+    }
+    return { action: 'deny' };
   });
+});
 
 // Handle app ready state
 app.on('ready', () => {
@@ -443,6 +497,31 @@ function registerWindowsIpc() {
   ipcMain.on('windows:stopWatchFocus', () => {
     stopFocusWatchWin32();
   });
+}
+
+/**
+ * Path-containment guard (H-4 / H-5 fix).
+ *
+ * Resolves `target` to an absolute path and asserts that it starts with
+ * `base` followed by the platform separator.  Throws a descriptive Error
+ * on failure so IPC handlers can catch it and return null / {} safely.
+ *
+ * @param {string} target - The path to validate (may be relative or absolute).
+ * @param {string} base   - The root that target must reside under.
+ */
+function assertUnderBaseDir(target, base) {
+  const resolvedTarget = path.resolve(target);
+  const resolvedBase   = path.resolve(base);
+  // Ensure comparison is case-insensitive on Windows
+  const normalTarget = resolvedTarget.toLowerCase();
+  const normalBase   = resolvedBase.toLowerCase();
+  // The target must start with base + sep to avoid sibling-directory bypass
+  // (e.g. /photos-extra would start with /photos but isn't /photos/).
+  if (!normalTarget.startsWith(normalBase + path.sep) && normalTarget !== normalBase) {
+    throw new Error(
+      `[Security] Path traversal blocked: "${resolvedTarget}" is not inside "${resolvedBase}"`
+    );
+  }
 }
 
 // IPC implementation for photo mapping operations
@@ -513,7 +592,10 @@ function registerPhotoMapIpc() {
   ipcMain.handle('photoMap:saveMapping', async (event, payload) => {
     const { gameName, map } = payload || {};
     const safeName = sanitizeGameName(gameName);
-    const dir = path.join(getPhotosBaseDir(), safeName);
+    const base = getPhotosBaseDir();
+    const dir = path.join(base, safeName);
+    // Path-containment guard: ensure the resolved directory is inside base
+    assertUnderBaseDir(dir, base);
     await fsp.mkdir(dir, { recursive: true });
     const file = path.join(dir, 'photo-map.json');
     const json = JSON.stringify({ gameName: safeName, keys: map || {} }, null, 2);
@@ -525,7 +607,10 @@ function registerPhotoMapIpc() {
   // Load mapping JSON from <userData>/photos/<GameName>/photo-map.json
   ipcMain.handle('photoMap:loadMapping', async (event, gameName) => {
     const safeName = sanitizeGameName(gameName);
-    const file = path.join(getPhotosBaseDir(), safeName, 'photo-map.json');
+    const base = getPhotosBaseDir();
+    const file = path.join(base, safeName, 'photo-map.json');
+    // Path-containment guard
+    assertUnderBaseDir(file, base);
     try {
       const buf = await fsp.readFile(file, 'utf-8');
       const data = JSON.parse(buf);
@@ -537,13 +622,18 @@ function registerPhotoMapIpc() {
     }
   });
 
-  // Utility: read an image file and return a data URL (base64)
+  // Utility: read an image file and return a data URL (base64).
+  // Security (H-4): resolve the caller-supplied path and assert it lives
+  // inside getPhotosBaseDir() before doing any filesystem I/O.
   ipcMain.handle('photoMap:readFileDataUrl', async (event, absPath) => {
     try {
       if (!absPath) throw new Error('No path provided');
-      const buf = await fsp.readFile(String(absPath));
+      const resolved = path.resolve(String(absPath));
+      const base = getPhotosBaseDir();
+      assertUnderBaseDir(resolved, base);
+      const buf = await fsp.readFile(resolved);
       // Best-effort mime detection by extension
-      const ext = String(absPath).toLowerCase();
+      const ext = resolved.toLowerCase();
       const mime = ext.endsWith('.png') ? 'image/png'
         : ext.endsWith('.jpg') || ext.endsWith('.jpeg') ? 'image/jpeg'
         : ext.endsWith('.gif') ? 'image/gif'
@@ -566,8 +656,25 @@ function registerPhotoMapIpc() {
 
 function sanitizeGameName(name) {
   const raw = String(name || '').trim();
-  // Replace characters illegal in Windows/macOS/Linux paths with '_'
-  return raw.replace(/[\\/:*?"<>|]/g, '_') || 'default';
+
+  // Step 1 — Replace characters illegal in Windows/macOS/Linux paths with '_'
+  const cleaned = raw.replace(/[\\/:*?"<>|]/g, '_');
+
+  // Step 2 — Split on any path separator (/ or \) and take the last segment.
+  //           This drops any leading directory components a caller may have
+  //           smuggled in (e.g. "../../AppData/Roaming/evil" → "evil" after
+  //           character replacement would still have traversal intent).
+  const segments = cleaned.split(/[\\/]+/);
+  const lastSegment = segments[segments.length - 1] || '';
+
+  // Step 3 — Reject '..' outright (after replacement it would appear as '__'
+  //           but guard the pre-replacement form too for belt-and-suspenders).
+  if (!lastSegment || lastSegment === '..' || raw.split(/[\\/]+/).some((s) => s === '..')) {
+    console.warn(`[Security] sanitizeGameName rejected traversal attempt: "${raw}"`);
+    return 'default';
+  }
+
+  return lastSegment || 'default';
 }
 
 // Create a frameless overlay window that stays on top
@@ -628,6 +735,22 @@ function createOverlayWindow() {
   } else {
     loadOverlayProduction();
   }
+
+  // Security: block any attempt by overlay renderer to open a new browser window.
+  // Use the same http/https-only allowlist as mainWindow.
+  overlayWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+        shell.openExternal(url);
+      } else {
+        console.warn(`[Security] Blocked shell.openExternal (overlay) for disallowed protocol: ${parsed.protocol} (url: ${url})`);
+      }
+    } catch (e) {
+      console.warn(`[Security] Blocked shell.openExternal (overlay) for unparseable URL: ${url}`);
+    }
+    return { action: 'deny' };
+  });
 
   overlayWindow.on('closed', () => {
     overlayWindow = null;
@@ -710,4 +833,132 @@ async function writeProfilesState(state) {
   const data = JSON.stringify({ active: state && state.active ? String(state.active) : 'default' }, null, 2);
   await fsp.writeFile(file, data, 'utf-8');
   return true;
+}
+/**
+ * TikTok Login and Session Management
+ */
+function registerTikTokIpc() {
+  ipcMain.handle('tiktok:startLogin', async () => {
+    const { session } = require('electron');
+    const loginWin = new BrowserWindow({
+      width: 500,
+      height: 800,
+      title: 'TikTok Login',
+      autoHideMenuBar: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        partition: 'persist:tiktok_login',
+        // Enable essential features for OAuth flows
+        domStorageEnabled: true,
+        databaseEnabled: true,
+      }
+    });
+
+    // Set a modern Chrome User-Agent to avoid Google/TikTok security blocks
+    // Google OAuth often blocks the default Electron User-Agent
+    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36';
+    loginWin.webContents.setUserAgent(userAgent);
+
+    loginWin.loadURL('https://www.tiktok.com/login', { userAgent });
+
+    return new Promise((resolve) => {
+      let isResolved = false;
+
+      const poll = setInterval(async () => {
+        if (loginWin.isDestroyed()) {
+          clearInterval(poll);
+          if (!isResolved) {
+            isResolved = true;
+            resolve({ success: false, error: 'Window closed before login' });
+          }
+          return;
+        }
+
+        try {
+          // TikTok session requires both 'sessionid' and 'tt-target-idc'
+          // Extract both to satisfy the tiktok-live-connector requirements
+          const cookies = await loginWin.webContents.session.cookies.get({
+            url: 'https://www.tiktok.com'
+          });
+
+          const sid = cookies.find(c => c.name === 'sessionid')?.value;
+          const idc = cookies.find(c => c.name === 'tt-target-idc')?.value;
+
+          if (sid && idc) {
+            console.log('[TikTok] sessionid and idc detected!');
+            clearInterval(poll);
+            
+            await persistTikTokSession(sid, idc);
+            
+            isResolved = true;
+            loginWin.close();
+            resolve({ success: true, sessionId: sid });
+          }
+        } catch (err) {
+          console.error('[TikTok] Cookie polling error:', err);
+        }
+      }, 2000);
+
+      loginWin.on('closed', () => {
+        clearInterval(poll);
+        if (!isResolved) {
+          isResolved = true;
+          resolve({ success: false, error: 'Login window closed' });
+        }
+      });
+    });
+  });
+}
+
+async function persistTikTokSession(sessionId, targetIdc) {
+  try {
+    const repoRoot = findRepoRoot([__dirname, path.join(__dirname, '..'), path.join(__dirname, '..', '..')]);
+    if (!repoRoot) {
+      console.warn('[TikTok] Repo root not found, cannot persist to .env');
+      process.env.TIKTOK_SESSION_ID = sessionId;
+      process.env.TIKTOK_TARGET_IDC = targetIdc;
+      return;
+    }
+
+    const envPath = path.join(repoRoot, 'backend', '.env');
+    let content = '';
+    try {
+      if (fs.existsSync(envPath)) {
+        content = await fsp.readFile(envPath, 'utf8');
+      }
+    } catch (e) {}
+
+    let lines = content.split('\n');
+    let sidFound = false;
+    let idcFound = false;
+
+    lines = lines.map(line => {
+      if (line.startsWith('TIKTOK_SESSION_ID=')) {
+        sidFound = true;
+        return `TIKTOK_SESSION_ID=${sessionId}`;
+      }
+      if (line.startsWith('TIKTOK_TARGET_IDC=')) {
+        idcFound = true;
+        return `TIKTOK_TARGET_IDC=${targetIdc}`;
+      }
+      return line;
+    });
+
+    if (!sidFound) {
+      lines.push(`TIKTOK_SESSION_ID=${sessionId}`);
+    }
+    if (!idcFound) {
+      lines.push(`TIKTOK_TARGET_IDC=${targetIdc}`);
+    }
+
+    await fsp.writeFile(envPath, lines.join('\n'), 'utf8');
+    console.log('[TikTok] Persisted session information to:', envPath);
+    
+    // Also update current process env for immediate use
+    process.env.TIKTOK_SESSION_ID = sessionId;
+    process.env.TIKTOK_TARGET_IDC = targetIdc;
+  } catch (err) {
+    console.error('[TikTok] Failed to persist session:', err);
+  }
 }

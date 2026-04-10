@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useOverlay } from './context/OverlayContext.jsx';
 import StreamOverlay from './components/StreamOverlay.jsx';
-import { connect, send } from './ws';
+import { connect, disconnect, send } from './ws';
 import MainLayout from './components/MainLayout';
 import { CleanMappingSection } from './components/MappingSection';
 import LiveFeedSection from './components/LiveFeedSection';
@@ -82,7 +82,7 @@ export default function App() {
   }, [mapping]);
 
   useEffect(() => {
-    connect((msg) => {
+    const handler = (msg) => {
       if (msg.type === 'init') {
         // Pull initial state from backend
         setPaused(!!msg.paused);
@@ -114,7 +114,7 @@ export default function App() {
 
         // Work against refs so multiple rapid events see the latest state synchronously
         const map = { ...feedMapRef.current };
-        const order = [...feedOrderRef.current];
+        const order = [...feedOrderRef.current ];
 
         // Find the newest card for this pair
         let targetId = null;
@@ -229,7 +229,9 @@ export default function App() {
           });
         }
       }
-    });
+    };
+    connect(handler);
+    return () => disconnect(handler);
   }, []);
 
   // Broadcast like triggers and likes to overlay window
@@ -246,28 +248,30 @@ export default function App() {
 
   // LikeTriggerEngine - monitors totalLikes and fires triggers
   useEffect(() => {
-    console.log(`🔍 Like trigger engine running - totalLikes: ${totalLikes}, triggers: ${likeTriggers.length}`);
-    
-    likeTriggers.forEach((trigger, index) => {
+    // Read from ref to avoid stale closure — likeTriggersRef.current is always up-to-date
+    const triggers = likeTriggersRef.current;
+    console.log(`🔍 Like trigger engine running - totalLikes: ${totalLikes}, triggers: ${triggers.length}`);
+
+    triggers.forEach((trigger, index) => {
       const multiplier = Math.floor(totalLikes / trigger.threshold);
       console.log(`🔍 Checking trigger: ${trigger.threshold} likes -> "${trigger.key}" (current: ${totalLikes}, multiplier: ${multiplier}, fired: ${trigger.firedCount})`);
-      
+
       if (multiplier > trigger.firedCount) {
         // Fire the trigger
         console.log(`🔥 Like trigger fired: ${trigger.threshold} likes -> key "${trigger.key}" (fired ${multiplier} times)`);
-        send({ 
-          type: 'like-key', 
-          key: trigger.key, 
-          durationMs: trigger.durationMs 
+        send({
+          type: 'like-key',
+          key: trigger.key,
+          durationMs: trigger.durationMs,
         });
-        
+
         // Update firedCount locally
-        const updatedTriggers = [...likeTriggers];
+        const updatedTriggers = [...triggers];
         updatedTriggers[index] = { ...trigger, firedCount: multiplier };
         setLikeTriggers(updatedTriggers);
       }
     });
-  }, [totalLikes]); // Remove likeTriggers from dependency to prevent recreation
+  }, [totalLikes, likeTriggers]); // likeTriggers in dep array so new/removed triggers are reflected
 
   // Profiles helpers
   function persistProfiles(next) {
