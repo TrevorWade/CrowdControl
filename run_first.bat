@@ -2,14 +2,14 @@
 setlocal enabledelayedexpansion
 
 REM ============================================
-REM  TTLxRL First-Time Setup (run_first.bat)
+REM  CrowdControl First-Time Setup (run_first.bat)
 REM  - Verifies Node/npm
 REM  - Installs deps in root, frontend, backend, electron
 REM  - Creates backend\.env if missing
 REM ============================================
 
 cd /d "%~dp0"
-echo TTLxRL first-time setup starting...
+echo CrowdControl first-time setup starting...
 echo Working directory: %CD%
 echo.
 

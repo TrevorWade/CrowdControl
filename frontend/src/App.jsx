@@ -57,7 +57,7 @@ export default function App() {
   const overlayBcRef = useRef(null);
   useEffect(() => {
     try {
-      const bc = new BroadcastChannel('ttlrl-overlay');
+      const bc = new BroadcastChannel('crowdcontrol-overlay');
       overlayBcRef.current = bc;
       bc.onmessage = (ev) => {
         const msg = ev.data || {};

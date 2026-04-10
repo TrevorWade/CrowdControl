@@ -1,5 +1,5 @@
 {
-  "name": "ttl_rl-monorepo",
+  "name": "crowdcontrol-monorepo",
   "private": true,
   "workspaces": [
     "backend",

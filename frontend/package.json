@@ -1,9 +1,9 @@
 {
-  "name": "tiktok-macro-frontend",
+  "name": "crowdcontrol-frontend",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "TikTok Live to Rocket League Gift Key Mapper desktop app",
+  "description": "CrowdControl: TikTok Live gift to keyboard macro frontend",
   "author": "TTL RL Team",
   "scripts": {
     "dev": "vite",

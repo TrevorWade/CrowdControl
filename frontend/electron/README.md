@@ -1,6 +1,6 @@
-# Electron Setup for TikTok Gift Key Mapper
+# Electron Setup for CrowdControl
 
-This folder contains the Electron configuration for running your TikTok Gift Key Mapper as a desktop application.
+This folder contains the Electron configuration for running your CrowdControl as a desktop application.
 
 ## 📁 File Structure
 

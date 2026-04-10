@@ -415,7 +415,7 @@ app.on('activate', () => {
 
 // Handle app ready state
 app.on('ready', () => {
-  console.log('TikTok Gift Key Mapper is ready!');
+  console.log('CrowdControl is ready!');
 });
 
 /**

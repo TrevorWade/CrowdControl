@@ -1,4 +1,4 @@
-<h1 align="center">TikTok Gift → Key Mapper (TTL RL)</h1>
+<h1 align="center">CrowdControl: TikTok Live Key Mapper</h1>
 
 <p align="center">
   <strong>Automate your gameplay with TikTok Live gifts and interactions.</strong><br />
@@ -15,7 +15,7 @@
 
 ## 🚀 Overview
 
-**TTLxRL** is a powerful desktop automation tool designed for streamers. It monitors your TikTok Live stream for specific gifts or like milestones and instantly translates them into keyboard or mouse inputs. Originally optimized for **Rocket League**, it works with any Windows application that accepts standard inputs.
+**CrowdControl** is a powerful desktop automation tool designed for streamers. It monitors your TikTok Live stream for specific gifts or like milestones and instantly translates them into keyboard or mouse inputs. Originally optimized for **Rocket League**, it works with any Windows application that accepts standard inputs.
 
 
 ## ✨ Key Features
@@ -41,13 +41,13 @@ Open an **Elevated PowerShell** (Right-click Start → Terminal Admin or PowerSh
 ```powershell
 New-Item -Path C:\apps -ItemType Directory -Force ;
 Set-Location C:\apps ;
-Invoke-WebRequest -Uri https://github.com/TrevorWade/TTLxRL/archive/refs/heads/main.zip -OutFile TTLxRL.zip ;
-Expand-Archive -Path TTLxRL.zip -DestinationPath . -Force ;
-Rename-Item -Path .\TTLxRL-main -NewName TTLxRL ;
-Remove-Item .\TTLxRL.zip ;
-Set-Location .\TTLxRL ;
+Invoke-WebRequest -Uri https://github.com/TrevorWade/CrowdControl/archive/refs/heads/main.zip -OutFile CrowdControl.zip ;
+Expand-Archive -Path CrowdControl.zip -DestinationPath . -Force ;
+Rename-Item -Path .\CrowdControl-main -NewName CrowdControl ;
+Remove-Item .\CrowdControl.zip ;
+Set-Location .\CrowdControl ;
 .\run_first.bat ;
-.\start_ttlrl.bat
+.\start_crowdcontrol.bat
 ```
 
 ## 📖 How to Use
@@ -76,7 +76,7 @@ Example: `AHK_PATH=C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe`
 
 <details>
 <summary>UI is blank or stuck loading</summary>
-Close the application completely and run `run_first.bat` to refresh dependencies, then relaunch with `start_ttlrl.bat`.
+Close the application completely and run `run_first.bat` to refresh dependencies, then relaunch with `start_crowdcontrol.bat`.
 </details>
 
 ## 👨‍💻 Development & Build
@@ -108,4 +108,3 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ---
 <p align="center">Built with ❤️ for the streaming community.</p>
-

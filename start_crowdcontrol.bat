@@ -8,13 +8,13 @@ exit /b
 :hidden
 if "%DEBUG%"=="1" pause
 REM ============================================
-REM  TikTok Live → Key Mapper starter script
+REM  CrowdControl: TikTok Live Key Mapper
 REM  Opens two terminal windows:
 REM    • FRONTEND  (Vite)          — http://localhost:5173
 REM    • BACKEND   (WebSocket API) — ws://localhost:5178
 REM ============================================
 
-echo Starting TTLxRL application...
+echo Starting CrowdControl application...
 echo Current directory: %CD%
 echo Script path: %~dp0
 echo.
@@ -68,7 +68,7 @@ if %ERRORLEVEL% NEQ 0 (
 REM ---- Check if Electron launched successfully ----
 echo Checking if Electron app launched...
 timeout /t 2 /nobreak >nul
-tasklist /FI "WINDOWTITLE eq TTL_RL Electron App*" 2>nul | find /I "electron.exe" >nul
+tasklist /FI "WINDOWTITLE eq CrowdControl*" 2>nul | find /I "electron.exe" >nul
 if %ERRORLEVEL% EQU 0 (
     echo SUCCESS: Electron app launched successfully!
 ) else (
@@ -80,12 +80,10 @@ if %ERRORLEVEL% EQU 0 (
 REM Exit immediately; windows are hidden
 goto :eof
 
-goto :eof
-
 REM ---- Missing dependency handler ----
 :missing_deps
 REM Show minimal message box without a console window
-powershell -NoProfile -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('Dependencies missing. Run run_first.bat first.','TTLxRL') | Out-Null"
+powershell -NoProfile -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('Dependencies missing. Run run_first.bat first.','CrowdControl') | Out-Null"
 exit /b 1
 
 REM ---- Helpers ----
@@ -97,7 +95,7 @@ set "TARGET_PORT=%~1"
 set "MAX_SECS=%~2"
 if "%MAX_SECS%"=="" set "MAX_SECS=15"
 set /a "ELAPSED=0"
-:_wait_loop
+: _wait_loop
 rem We search for a line that includes :PORT and LISTENING
 netstat -ano | findstr /R /C:":%TARGET_PORT% .*LISTENING" >nul
 if %ERRORLEVEL% EQU 0 (

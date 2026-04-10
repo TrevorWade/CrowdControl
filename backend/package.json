@@ -1,7 +1,7 @@
 {
-  "name": "tiktok-macro-backend",
+  "name": "crowdcontrol-backend",
   "version": "1.0.0",
-  "description": "TikTok Live gift to keyboard macro backend (Windows 10/11)",
+  "description": "CrowdControl: TikTok Live gift to keyboard macro backend (Windows 10/11)",
   "main": "index.js",
   "license": "MIT",
   "private": true,

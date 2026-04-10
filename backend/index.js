@@ -174,12 +174,12 @@ wss.on('connection', (ws) => {
                 const v2script = buildAhkHoldScriptV2(ahkKey, durationMs, titleMatch);
                 const v1script = buildAhkHoldScriptV1(ahkKey, durationMs, titleMatch);
 
-                const tmpV2 = path.join(os.tmpdir(), `ttlrl_like_test_${Date.now()}_${Math.random().toString(36).slice(2)}_v2.ahk`);
+                const tmpV2 = path.join(os.tmpdir(), `crowdcontrol_like_test_${Date.now()}_${Math.random().toString(36).slice(2)}_v2.ahk`);
                 fs.writeFileSync(tmpV2, v2script, 'utf8');
                 const v2ok = await runAhk(ahkPath, tmpV2);
                 try { fs.unlinkSync(tmpV2); } catch { }
                 if (!v2ok) {
-                  const tmpV1 = path.join(os.tmpdir(), `ttlrl_like_test_${Date.now()}_${Math.random().toString(36).slice(2)}_v1.ahk`);
+                  const tmpV1 = path.join(os.tmpdir(), `crowdcontrol_like_test_${Date.now()}_${Math.random().toString(36).slice(2)}_v1.ahk`);
                   fs.writeFileSync(tmpV1, v1script, 'utf8');
                   await runAhk(ahkPath, tmpV1);
                   try { fs.unlinkSync(tmpV1); } catch { }
@@ -254,12 +254,12 @@ wss.on('connection', (ws) => {
             const v2script = buildAhkHoldScriptV2(ahkKey, durationMs, titleMatch);
             const v1script = buildAhkHoldScriptV1(ahkKey, durationMs, titleMatch);
 
-            const tmpV2 = path.join(os.tmpdir(), `ttlrl_like_${Date.now()}_${Math.random().toString(36).slice(2)}_v2.ahk`);
+            const tmpV2 = path.join(os.tmpdir(), `crowdcontrol_like_${Date.now()}_${Math.random().toString(36).slice(2)}_v2.ahk`);
             fs.writeFileSync(tmpV2, v2script, 'utf8');
             const v2ok = await runAhk(ahkPath, tmpV2);
             try { fs.unlinkSync(tmpV2); } catch { }
             if (!v2ok) {
-              const tmpV1 = path.join(os.tmpdir(), `ttlrl_like_${Date.now()}_${Math.random().toString(36).slice(2)}_v1.ahk`);
+              const tmpV1 = path.join(os.tmpdir(), `crowdcontrol_like_${Date.now()}_${Math.random().toString(36).slice(2)}_v1.ahk`);
               fs.writeFileSync(tmpV1, v1script, 'utf8');
               await runAhk(ahkPath, tmpV1);
               try { fs.unlinkSync(tmpV1); } catch { }
@@ -749,12 +749,12 @@ async function processGiftStackCumulativeHold(giftNameLower, count, action) {
       const v2script = buildAhkHoldScriptV2(ahkKey, totalDurationMs, titleMatch);
       const v1script = buildAhkHoldScriptV1(ahkKey, totalDurationMs, titleMatch);
 
-      const tmpV2 = path.join(os.tmpdir(), `ttlrl_cumulative_${Date.now()}_${Math.random().toString(36).slice(2)}_v2.ahk`);
+      const tmpV2 = path.join(os.tmpdir(), `crowdcontrol_cumulative_${Date.now()}_${Math.random().toString(36).slice(2)}_v2.ahk`);
       fs.writeFileSync(tmpV2, v2script, 'utf8');
       const v2ok = await runAhk(ahkPath, tmpV2);
       try { fs.unlinkSync(tmpV2); } catch { }
       if (!v2ok) {
-        const tmpV1 = path.join(os.tmpdir(), `ttlrl_cumulative_${Date.now()}_${Math.random().toString(36).slice(2)}_v1.ahk`);
+        const tmpV1 = path.join(os.tmpdir(), `crowdcontrol_cumulative_${Date.now()}_${Math.random().toString(36).slice(2)}_v1.ahk`);
         fs.writeFileSync(tmpV1, v1script, 'utf8');
         await runAhk(ahkPath, tmpV1);
         try { fs.unlinkSync(tmpV1); } catch { }
@@ -807,7 +807,7 @@ async function processGiftStackBatchAhk(giftNameLower, count, key, durationMs) {
 
   lines.push('ExitApp');
 
-  const tmp = path.join(os.tmpdir(), `ttlrl_stack_${Date.now()}_${Math.random().toString(36).slice(2)}.ahk`);
+  const tmp = path.join(os.tmpdir(), `crowdcontrol_stack_${Date.now()}_${Math.random().toString(36).slice(2)}.ahk`);
   fs.writeFileSync(tmp, lines.join('\n'), 'utf8');
   await runAhk(ahkPath, tmp);
   try { fs.unlinkSync(tmp); } catch { }
@@ -857,12 +857,12 @@ async function executeGiftAction(giftNameLower, action, senderName) {
         const v2script = buildAhkHoldScriptV2(ahkKey, durationMs, titleMatch);
         const v1script = buildAhkHoldScriptV1(ahkKey, durationMs, titleMatch);
 
-        const tmpV2 = path.join(os.tmpdir(), `ttlrl_mouse_${Date.now()}_${Math.random().toString(36).slice(2)}_v2.ahk`);
+        const tmpV2 = path.join(os.tmpdir(), `crowdcontrol_mouse_${Date.now()}_${Math.random().toString(36).slice(2)}_v2.ahk`);
         fs.writeFileSync(tmpV2, v2script, 'utf8');
         const v2ok = await runAhk(ahkPath, tmpV2);
         try { fs.unlinkSync(tmpV2); } catch { }
         if (!v2ok) {
-          const tmpV1 = path.join(os.tmpdir(), `ttlrl_mouse_${Date.now()}_${Math.random().toString(36).slice(2)}_v1.ahk`);
+          const tmpV1 = path.join(os.tmpdir(), `crowdcontrol_mouse_${Date.now()}_${Math.random().toString(36).slice(2)}_v1.ahk`);
           fs.writeFileSync(tmpV1, v1script, 'utf8');
           await runAhk(ahkPath, tmpV1);
           try { fs.unlinkSync(tmpV1); } catch { }
@@ -899,12 +899,12 @@ async function executeGiftAction(giftNameLower, action, senderName) {
       const v2script = buildAhkHoldScriptV2(ahkKey, durationMs, titleMatch);
       const v1script = buildAhkHoldScriptV1(ahkKey, durationMs, titleMatch);
 
-      const tmpV2 = path.join(os.tmpdir(), `ttlrl_${Date.now()}_${Math.random().toString(36).slice(2)}_v2.ahk`);
+      const tmpV2 = path.join(os.tmpdir(), `crowdcontrol_${Date.now()}_${Math.random().toString(36).slice(2)}_v2.ahk`);
       fs.writeFileSync(tmpV2, v2script, 'utf8');
       const v2ok = await runAhk(ahkPath, tmpV2);
       try { fs.unlinkSync(tmpV2); } catch { }
       if (!v2ok) {
-        const tmpV1 = path.join(os.tmpdir(), `ttlrl_${Date.now()}_${Math.random().toString(36).slice(2)}_v1.ahk`);
+        const tmpV1 = path.join(os.tmpdir(), `crowdcontrol_${Date.now()}_${Math.random().toString(36).slice(2)}_v1.ahk`);
         fs.writeFileSync(tmpV1, v1script, 'utf8');
         await runAhk(ahkPath, tmpV1);
         try { fs.unlinkSync(tmpV1); } catch { }

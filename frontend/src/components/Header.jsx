@@ -30,7 +30,7 @@ export default function Header({
             </svg>
           </div>
           <h1 className="text-2xl font-semibold text-tiktok-white">
-            TikTok Gift → Key Mapper
+            CrowdControl
           </h1>
         </div>
         

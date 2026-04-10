@@ -1,7 +1,7 @@
 {
-  "name": "ttl-rl-electron",
+  "name": "crowdcontrol-electron",
   "version": "1.0.0",
-  "description": "TikTok Live to Rocket League Gift Key Mapper",
+  "description": "CrowdControl: TikTok Live Key Mapper",
   "main": "main.js",
   "type": "commonjs",
   "scripts": {
@@ -20,8 +20,8 @@
     "electron-builder": "^26.0.12"
   },
   "build": {
-    "appId": "com.ttlrl.tiktok-gift-mapper",
-    "productName": "TikTok Gift Key Mapper",
+    "appId": "com.crowdcontrol.tiktok-gift-mapper",
+    "productName": "CrowdControl",
     "directories": {
       "output": "dist-electron"
     },
@@ -56,9 +56,9 @@
       {
         "provider": "github",
         "owner": "TrevorWade",
-        "repo": "TTLxRL"
+        "repo": "CrowdControl"
       }
     ],
-    "artifactName": "TTLxRL-${version}-Setup.${ext}"
+    "artifactName": "CrowdControl-${version}-Setup.${ext}"
   }
 }
